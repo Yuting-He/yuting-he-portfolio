@@ -1,12 +1,12 @@
 # Yuting He Portfolio
 
-Personal portfolio and CV site for geospatial AI, climate risk analytics, hydrological risk, and applied machine learning.
+Personal portfolio and CV site for environmental engineering, statistics, geospatial and NatCat risk analytics, hydrological risk, and applied AI workflows.
 
 ## Contents
 
 - `index.html` - static portfolio homepage
 - `styles.css` - responsive styling
-- `assets/Yuting_He_CV_Geospatial_AI_Climate_Risk.docx` - downloadable CV
+- `assets/Yuting_He_CV_MunichRe_AI_NatCat.docx` - downloadable CV
 - `assets/yuting-geospatial-climate-hero.png` - homepage hero image
 
 ## Local Preview
