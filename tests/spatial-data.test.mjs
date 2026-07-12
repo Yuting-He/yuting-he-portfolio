@@ -50,10 +50,11 @@ test("exact-area crosswalk references valid basin and district identifiers", asy
 
 test("spatial manifest checksums match the published assets", async () => {
   const manifest = await readJson("../assets/spatial-data-manifest.json");
+  const normalizedHash = (bytes) => createHash("sha256").update(bytes.toString("utf8").replaceAll("\r\n", "\n")).digest("hex");
   for (const asset of manifest.assets) {
     const bytes = await readFile(new URL(`../${asset.path}`, import.meta.url));
-    assert.equal(createHash("sha256").update(bytes).digest("hex"), asset.sha256);
+    assert.equal(normalizedHash(bytes), asset.sha256);
   }
   const crosswalk = await readFile(new URL("../assets/basin-nuts3-crosswalk.json", import.meta.url));
-  assert.equal(createHash("sha256").update(crosswalk).digest("hex"), manifest.crosswalk.sha256);
+  assert.equal(normalizedHash(crosswalk), manifest.crosswalk.sha256);
 });
