@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="HeatLens Germany: multi-scale heatwave and drought resilience decision support by Yuting He.">
+    <meta name="theme-color" content="#081a23">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <link rel="canonical" href="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
+    <meta property="og:title" content="HeatLens Germany | Multi-scale Heat and Drought Scenario Explorer">
+    <meta property="og:description" content="An open GIS research application connecting sub-basin scenarios to German city/county and state decision views.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
+    <title>HeatLens Germany | Multi-scale Heat and Drought Risk</title>
+    <link rel="stylesheet" href="./heatwave-demo.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#application">Skip to risk explorer</a>
+    <header class="demo-header" aria-label="Primary navigation">
+      <a class="demo-brand" href="./index.html">Yuting He <span>GIS NatCat x AI</span></a>
+      <nav aria-label="Demo navigation">
+        <a href="./index.html#projects">Portfolio</a>
+        <a href="#method">Method</a>
+        <a href="#data">Data</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="demo-intro" aria-labelledby="demo-title">
+        <div>
+          <p class="kicker">Germany-wide heat and drought intelligence</p>
+          <h1 id="demo-title">HeatLens Germany</h1>
+          <p>
+            Daily sub-basin predictions are translated into state and city/county risk indices, keeping the hydrology
+            model spatially meaningful while giving residents, farms, and municipalities an administrative view.
+          </p>
+        </div>
+        <div class="scenario-context" aria-label="Model architecture">
+          <span class="context-label">Model architecture</span>
+          <strong>Predict by basin, act by place</strong>
+          <span>HydroBASINS Level 8 feeds NUTS-3 and state-level impact aggregation.</span>
+        </div>
+      </section>
+
+      <section class="summary-strip" aria-label="Model overview">
+        <dl>
+          <div>
+            <dt>Coverage</dt>
+            <dd id="coverage-value">Loading boundaries</dd>
+          </div>
+          <div>
+            <dt>Selected date</dt>
+            <dd id="selected-date-value">11 Jul 2026</dd>
+          </div>
+          <div>
+            <dt>Prediction unit</dt>
+            <dd id="prediction-unit-value">Sub-basin</dd>
+          </div>
+          <div>
+            <dt>Data status</dt>
+            <dd id="data-status-value">Scenario analysis</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="workbench" id="application" aria-labelledby="map-title">
+        <div class="scenario-banner" role="note">
+          <span class="scenario-badge">Static research scenario</span>
+          <p>Values are generated locally to demonstrate the decision workflow. They are not observations or a live forecast.</p>
+          <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Check official DWD warnings</a>
+        </div>
+        <div class="workbench-toolbar">
+          <fieldset class="control-group date-group">
+            <legend>Nearby date</legend>
+            <div class="date-controls">
+              <button class="icon-button" id="previous-day" type="button" aria-label="Previous day">&larr;</button>
+              <input id="forecast-date" type="date" min="2026-07-08" max="2026-07-17" value="2026-07-11" aria-label="Scenario date" aria-describedby="scenario-date-note">
+              <button class="icon-button" id="next-day" type="button" aria-label="Next day">&rarr;</button>
+            </div>
+            <span class="control-note" id="scenario-date-note">8-17 July 2026</span>
+          </fieldset>
+          <fieldset class="control-group">
+            <legend>Spatial level</legend>
+            <div class="control-buttons" role="group" aria-label="Spatial level selection">
+              <button class="control-button is-active" type="button" data-level="state" aria-pressed="true">State</button>
+              <button class="control-button" type="button" data-level="district" aria-pressed="false">City / county</button>
+              <button class="control-button" type="button" data-level="basin" aria-pressed="false">Sub-basin</button>
+            </div>
+          </fieldset>
+          <fieldset class="control-group">
+            <legend>Decision lens</legend>
+            <div class="control-buttons" role="group" aria-label="Audience selection">
+              <button class="control-button is-active" type="button" data-audience="residents" aria-pressed="true">Residents</button>
+              <button class="control-button" type="button" data-audience="farmers" aria-pressed="false">Farmers</button>
+              <button class="control-button" type="button" data-audience="municipal" aria-pressed="false">Municipal</button>
+            </div>
+          </fieldset>
+          <fieldset class="control-group">
+            <legend>Risk layer</legend>
+            <div class="control-buttons" role="group" aria-label="Risk layer selection">
+              <button class="control-button is-active" type="button" data-layer="impact" aria-pressed="true">Impact</button>
+              <button class="control-button" type="button" data-layer="heat" aria-pressed="false">Heat</button>
+              <button class="control-button" type="button" data-layer="drought" aria-pressed="false">Drought</button>
+            </div>
+          </fieldset>
+        </div>
+
+        <div class="map-layout">
+          <section class="map-stage" aria-labelledby="map-title">
+            <div class="map-stage-heading">
+              <div>
+                <p class="section-label" id="scope-label">National overview</p>
+                <h2 id="map-title">Germany - states</h2>
+              </div>
+              <div class="map-heading-actions">
+                <button class="scope-back" id="scope-back" type="button" hidden>&larr; Germany</button>
+                <button class="utility-button" id="share-view" type="button">Copy view link</button>
+                <button class="utility-button" id="export-view" type="button">Export JSON</button>
+                <label class="region-select-label" for="region-select">
+                  Region
+                  <select id="region-select"></select>
+                </label>
+              </div>
+            </div>
+            <svg id="heat-map" viewBox="0 0 720 900" role="img" aria-labelledby="map-svg-title map-svg-desc">
+              <title id="map-svg-title">Germany heat and drought resilience map</title>
+              <desc id="map-svg-desc">Select a state, city or county, or sub-basin to inspect the date-specific index.</desc>
+              <g id="scope-layer"></g>
+              <g id="data-layer"></g>
+            </svg>
+            <p id="map-status" class="map-status" role="status">Loading administrative and hydrological boundaries.</p>
+            <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
+            <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
+            <div class="map-legend" aria-label="Risk score legend">
+              <span><i class="swatch watch"></i>Watch 0-49</span>
+              <span><i class="swatch elevated"></i>Elevated 50-69</span>
+              <span><i class="swatch severe"></i>Severe 70-84</span>
+              <span><i class="swatch extreme"></i>Extreme 85-100</span>
+              <span><i class="swatch unavailable"></i>Insufficient coverage</span>
+            </div>
+          </section>
+
+          <aside class="detail-panel" aria-labelledby="region-title">
+            <p class="section-label" id="selected-kind">Selected state</p>
+            <div class="region-heading">
+              <h2 id="region-title">Germany</h2>
+              <span id="risk-level" class="risk-level">Loading</span>
+            </div>
+            <p id="region-summary" class="region-summary"></p>
+            <div id="signal-list" class="signal-list" aria-label="Risk signals"></div>
+            <section class="trend-block" aria-labelledby="trend-title">
+              <div class="trend-heading">
+                <h3 id="trend-title">10-day risk profile</h3>
+                <span id="trend-layer-label">Impact risk</span>
+              </div>
+              <svg id="risk-trend" viewBox="0 0 360 116" role="img" aria-labelledby="trend-svg-title trend-svg-desc">
+                <title id="trend-svg-title">Selected region scenario risk across nearby dates</title>
+                <desc id="trend-svg-desc">Trend data will appear after a region is loaded.</desc>
+              </svg>
+            </section>
+            <div class="action-block">
+              <div class="action-heading">
+                <p class="section-label">Suggested next actions</p>
+                <span id="confidence-label"></span>
+              </div>
+              <ol id="action-list"></ol>
+            </div>
+            <p class="decision-note" id="decision-note"></p>
+            <dl class="provenance-list" aria-label="Scenario provenance">
+              <div><dt>Model</dt><dd id="model-version">v0.3.0-scenario</dd></div>
+              <div><dt>Forcing</dt><dd>Deterministic synthetic scenario</dd></div>
+              <div><dt>Operational status</dt><dd>Research prototype, not a warning service</dd></div>
+            </dl>
+          </aside>
+        </div>
+
+        <p class="resolution-note" id="resolution-note">
+          State and city/county indices are area-weighted from the underlying sub-basin predictions.
+        </p>
+      </section>
+
+      <section id="method" class="content-band" aria-labelledby="method-title">
+        <div class="content-inner">
+          <p class="kicker">Spatial decision model</p>
+          <h2 id="method-title">One hydrological model, three decision scales.</h2>
+          <div class="method-grid">
+            <article>
+              <span>01</span>
+              <h3>Predict in 614 sub-basins</h3>
+              <p>Synthetic temperature-, thermal-stress-, soil-water-, SPI-, ET-, vegetation-, and low-flow-like proxies are generated for each scenario day.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <h3>Aggregate to 400 local regions</h3>
+              <p>Sub-basin scenarios are weighted by exact EPSG:3035 intersection area into NUTS-3 city/county units, then rolled up to the 16 states.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <h3>Gate role-specific actions</h3>
+              <p>Synthetic exposure assumptions change the impact lens; all role prompts remain low-regret evidence checks with explicit human verification.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="data" class="content-section" aria-labelledby="data-title">
+        <div class="content-inner">
+          <p class="kicker">Open-data architecture</p>
+          <h2 id="data-title">A production-shaped separation of geometry, forcing, model, and action.</h2>
+          <div class="data-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Source</th>
+                  <th>Operational role</th>
+                    <th>Spatial / temporal use</th>
+                    <th>Current status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><a href="https://www.hydrosheds.org/products/hydrobasins">HydroBASINS Level 8</a></td>
+                  <td>Non-overlapping drought prediction units with upstream/downstream topology</td>
+                  <td>614 Germany-clipped sub-basins</td>
+                  <td>Bundled geometry; synthetic scenario values</td>
+                </tr>
+                <tr>
+                  <td><a href="https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics">Eurostat GISCO NUTS 2024</a></td>
+                  <td>Administrative aggregation and drill-down</td>
+                  <td>16 states and 400 city/county regions</td>
+                  <td>Bundled geometry and exact overlap weights</td>
+                </tr>
+                <tr>
+                  <td><a href="https://www.dwd.de/EN/ourservices/cdc/cdc_ueberblick-klimadaten_en.html">DWD Open Data</a></td>
+                  <td>Observed and forecast temperature, humidity, wind, radiation, and official warnings</td>
+                  <td>Hourly forcing and short-horizon validation</td>
+                  <td>Planned; official warning link only</td>
+                </tr>
+                <tr>
+                  <td><a href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-timeseries?tab=download">ERA5-Land</a> / <a href="https://cds.climate.copernicus.eu/datasets/derived-utci-historical?tab=overview">ERA5-HEAT</a></td>
+                  <td>Root-zone soil water, evaporation, transpiration, potential evaporation, and UTCI</td>
+                  <td>Historical baseline and gap filling</td>
+                  <td>Planned data pipeline</td>
+                </tr>
+                <tr>
+                  <td><a href="https://drought.emergency.copernicus.eu/tumbo/edo/map/">Copernicus EDO</a></td>
+                  <td>SPI, soil-moisture anomaly, FAPAR anomaly, and Combined Drought Indicator</td>
+                  <td>Ten-day drought consistency check</td>
+                  <td>Planned data pipeline</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="source-note">
+            This portfolio build uses deterministic scenario forcing to exercise the complete spatial workflow. It is not a live warning service or agronomic instruction.
+            HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 geometry source: European Commission, Eurostat (GISCO).
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>HeatLens Germany - GIS NatCat x AI implementation by Yuting He.</p>
+      <a href="./index.html">Back to portfolio</a>
+    </footer>
+
+    <noscript><p class="noscript-note">HeatLens requires JavaScript to calculate and render the scenario map.</p></noscript>
+    <script src="./vendor/d3.min.js"></script>
+    <script src="./vendor/topojson-client.min.js"></script>
+    <script type="module" src="./heatwave-demo.js"></script>
+  </body>
+</html>

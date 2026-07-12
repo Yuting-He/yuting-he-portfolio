@@ -1,0 +1,38 @@
+{
+  "schema": "heatlens-spatial-manifest/v1",
+  "generated_at": "2026-07-12T22:41:15Z",
+  "crosswalk": {
+    "method": "Exact polygon intersection area in ETRS89 / LAEA Europe",
+    "analysis_crs": "EPSG:3035",
+    "minimum_overlap_km2": 0.001,
+    "records": 2139,
+    "basins": 614,
+    "districts": 400,
+    "unmatched_basins": [
+      "2080385760",
+      "2080414760",
+      "2080437090",
+      "2080492760",
+      "2080491750",
+      "2080375510",
+      "2080416800",
+      "2080420760",
+      "2080360340"
+    ],
+    "sha256": "b03d24261df5eeb2f08c47b64734c94e8ade36e6275a7180354bb8daa6b719e1"
+  },
+  "assets": [
+    {
+      "path": "assets/hydrobasins-de-level8.geojson",
+      "source": "HydroBASINS Europe Level 8 v1c",
+      "url": "https://www.hydrosheds.org/products/hydrobasins",
+      "sha256": "265140b8c5efd879725645d677a90e442c041299d865696951b331e6090bd694"
+    },
+    {
+      "path": "assets/nuts3-de.geojson",
+      "source": "Eurostat GISCO NUTS 2024 Level 3",
+      "url": "https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics",
+      "sha256": "96bf0044ec105d53b2415f8c7083211b070dae6367b40e692aa24975be8aa6ed"
+    }
+  ]
+}
