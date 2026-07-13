@@ -8,15 +8,16 @@ Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applie
 ## HeatLens capabilities
 
 - 614 Germany-clipped HydroBASINS Level 8 scenario units
-- 2,139 exact sub-basin x NUTS-3 overlap records in EPSG:3035
-- 400 NUTS-3 city/county views and 16 state summaries
+- exact sub-basin x NUTS-3 overlap records in EPSG:3035
+- 400 NUTS-3 district / urban-district views and 16 state summaries
+- official GISCO 2024 1:1M administrative boundaries over an interactive OpenStreetMap base map
 - nearby-date exploration for 8-17 July 2026
 - resident, farmer, and municipal decision lenses
 - impact, heat-like, and drought-like scenario layers
 - shareable URL state and JSON snapshot export
-- keyboard-operable SVG map plus native region selector
+- keyboard-operable Leaflet map plus native region selector
 - fail-closed handling when exact hydrological coverage is below 50%
-- bundled D3 and TopoJSON browser libraries with no runtime CDN dependency
+- bundled D3 and Leaflet browser libraries; standard OpenStreetMap raster tiles load for the current interactive view
 
 ## Important data boundary
 

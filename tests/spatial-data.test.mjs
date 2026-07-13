@@ -9,14 +9,13 @@ async function readJson(path) {
 
 test("bundled spatial layers have the expected Germany-wide coverage", async () => {
   const [states, districts, basins, crosswalk, manifest] = await Promise.all([
-    readJson("../assets/nuts-rg-60m-2024-4326-levl-1.json"),
+    readJson("../assets/nuts1-de.geojson"),
     readJson("../assets/nuts3-de.geojson"),
     readJson("../assets/hydrobasins-de-level8.geojson"),
     readJson("../assets/basin-nuts3-crosswalk.json"),
     readJson("../assets/spatial-data-manifest.json")
   ]);
-  const stateObject = states.objects.NUTS_RG_60M_2024_4326;
-  const germanStates = stateObject.geometries.filter((geometry) => geometry.properties.CNTR_CODE === "DE");
+  const germanStates = states.features.filter((feature) => feature.properties.CNTR_CODE === "DE");
   assert.equal(germanStates.length, 16);
   assert.equal(districts.features.length, 400);
   assert.equal(basins.features.length, 614);
@@ -24,6 +23,24 @@ test("bundled spatial layers have the expected Germany-wide coverage", async () 
   assert.ok(crosswalk.length > 2000);
   assert.equal(manifest.crosswalk.basins, 614);
   assert.equal(manifest.crosswalk.districts, 400);
+});
+
+test("administrative geometry uses the detailed GISCO 1:1M layers", async () => {
+  const [states, districts, manifest] = await Promise.all([
+    readJson("../assets/nuts1-de.geojson"),
+    readJson("../assets/nuts3-de.geojson"),
+    readJson("../assets/spatial-data-manifest.json")
+  ]);
+  const countPositions = (value) => {
+    if (!Array.isArray(value)) return 0;
+    if (typeof value[0] === "number") return 1;
+    return value.reduce((sum, item) => sum + countPositions(item), 0);
+  };
+  const statePositions = states.features.reduce((sum, feature) => sum + countPositions(feature.geometry.coordinates), 0);
+  const districtPositions = districts.features.reduce((sum, feature) => sum + countPositions(feature.geometry.coordinates), 0);
+  assert.ok(statePositions > 20_000);
+  assert.ok(districtPositions > 90_000);
+  assert.ok(manifest.assets.filter((asset) => asset.source.includes("1:1M")).length >= 2);
 });
 
 test("exact-area crosswalk references valid basin and district identifiers", async () => {

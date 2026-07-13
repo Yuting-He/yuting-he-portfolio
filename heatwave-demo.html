@@ -6,13 +6,15 @@
     <meta name="description" content="HeatLens Germany: multi-scale heatwave and drought resilience decision support by Yuting He.">
     <meta name="theme-color" content="#081a23">
     <meta name="referrer" content="strict-origin-when-cross-origin">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <link rel="icon" href="data:,">
     <link rel="canonical" href="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
     <meta property="og:title" content="HeatLens Germany | Multi-scale Heat and Drought Scenario Explorer">
-    <meta property="og:description" content="An open GIS research application connecting sub-basin scenarios to German city/county and state decision views.">
+    <meta property="og:description" content="An open GIS research application connecting sub-basin scenarios to German district, urban-district, and state decision views.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
     <title>HeatLens Germany | Multi-scale Heat and Drought Risk</title>
+    <link rel="stylesheet" href="./vendor/leaflet.css">
     <link rel="stylesheet" href="./heatwave-demo.css">
   </head>
   <body>
@@ -32,7 +34,7 @@
           <p class="kicker">Germany-wide heat and drought intelligence</p>
           <h1 id="demo-title">HeatLens Germany</h1>
           <p>
-            Daily sub-basin predictions are translated into state and city/county risk indices, keeping the hydrology
+            Daily sub-basin predictions are translated into state and district risk indices, keeping the hydrology
             model spatially meaningful while giving residents, farms, and municipalities an administrative view.
           </p>
         </div>
@@ -84,7 +86,7 @@
             <legend>Spatial level</legend>
             <div class="control-buttons" role="group" aria-label="Spatial level selection">
               <button class="control-button is-active" type="button" data-level="state" aria-pressed="true">State</button>
-              <button class="control-button" type="button" data-level="district" aria-pressed="false">City / county</button>
+              <button class="control-button" type="button" data-level="district" aria-pressed="false">District / urban district</button>
               <button class="control-button" type="button" data-level="basin" aria-pressed="false">Sub-basin</button>
             </div>
           </fieldset>
@@ -123,12 +125,7 @@
                 </label>
               </div>
             </div>
-            <svg id="heat-map" viewBox="0 0 720 900" role="img" aria-labelledby="map-svg-title map-svg-desc">
-              <title id="map-svg-title">Germany heat and drought resilience map</title>
-              <desc id="map-svg-desc">Select a state, city or county, or sub-basin to inspect the date-specific index.</desc>
-              <g id="scope-layer"></g>
-              <g id="data-layer"></g>
-            </svg>
+            <div id="heat-map" role="region" aria-label="Interactive Germany heat and drought resilience map" aria-describedby="map-status"></div>
             <p id="map-status" class="map-status" role="status">Loading administrative and hydrological boundaries.</p>
             <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
             <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
@@ -168,7 +165,7 @@
             </div>
             <p class="decision-note" id="decision-note"></p>
             <dl class="provenance-list" aria-label="Scenario provenance">
-              <div><dt>Model</dt><dd id="model-version">v0.3.0-scenario</dd></div>
+              <div><dt>Model</dt><dd id="model-version">v0.4.0-scenario</dd></div>
               <div><dt>Forcing</dt><dd>Deterministic synthetic scenario</dd></div>
               <div><dt>Operational status</dt><dd>Research prototype, not a warning service</dd></div>
             </dl>
@@ -176,7 +173,7 @@
         </div>
 
         <p class="resolution-note" id="resolution-note">
-          State and city/county indices are area-weighted from the underlying sub-basin predictions.
+          State and NUTS-3 district indices are area-weighted from the underlying sub-basin predictions.
         </p>
       </section>
 
@@ -193,7 +190,7 @@
             <article>
               <span>02</span>
               <h3>Aggregate to 400 local regions</h3>
-              <p>Sub-basin scenarios are weighted by exact EPSG:3035 intersection area into NUTS-3 city/county units, then rolled up to the 16 states.</p>
+              <p>Sub-basin scenarios are weighted by exact EPSG:3035 intersection area into NUTS-3 districts and urban districts, then rolled up to the 16 states.</p>
             </article>
             <article>
               <span>03</span>
@@ -228,8 +225,8 @@
                 <tr>
                   <td><a href="https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics">Eurostat GISCO NUTS 2024</a></td>
                   <td>Administrative aggregation and drill-down</td>
-                  <td>16 states and 400 city/county regions</td>
-                  <td>Bundled geometry and exact overlap weights</td>
+                  <td>16 states and 400 districts / urban districts</td>
+                  <td>Bundled 1:1M geometry and exact overlap weights</td>
                 </tr>
                 <tr>
                   <td><a href="https://www.dwd.de/EN/ourservices/cdc/cdc_ueberblick-klimadaten_en.html">DWD Open Data</a></td>
@@ -254,7 +251,8 @@
           </div>
           <p class="source-note">
             This portfolio build uses deterministic scenario forcing to exercise the complete spatial workflow. It is not a live warning service or agronomic instruction.
-            HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 geometry source: European Commission, Eurostat (GISCO).
+            HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO).
+            Background map and place labels: &copy; OpenStreetMap contributors.
           </p>
         </div>
       </section>
@@ -267,7 +265,7 @@
 
     <noscript><p class="noscript-note">HeatLens requires JavaScript to calculate and render the scenario map.</p></noscript>
     <script src="./vendor/d3.min.js"></script>
-    <script src="./vendor/topojson-client.min.js"></script>
+    <script src="./vendor/leaflet.js"></script>
     <script type="module" src="./heatwave-demo.js"></script>
   </body>
 </html>

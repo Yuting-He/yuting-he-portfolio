@@ -21,6 +21,7 @@ from shapely.strtree import STRtree
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "assets"
 BASIN_PATH = ASSETS / "hydrobasins-de-level8.geojson"
+STATE_PATH = ASSETS / "nuts1-de.geojson"
 DISTRICT_PATH = ASSETS / "nuts3-de.geojson"
 OUTPUT_PATH = ASSETS / "basin-nuts3-crosswalk.json"
 MANIFEST_PATH = ASSETS / "spatial-data-manifest.json"
@@ -104,9 +105,15 @@ def main() -> None:
                 "sha256": sha256(BASIN_PATH),
             },
             {
+                "path": "assets/nuts1-de.geojson",
+                "source": "Eurostat GISCO NUTS 2024 Level 1, 1:1M",
+                "url": "https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html",
+                "sha256": sha256(STATE_PATH),
+            },
+            {
                 "path": "assets/nuts3-de.geojson",
-                "source": "Eurostat GISCO NUTS 2024 Level 3",
-                "url": "https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics",
+                "source": "Eurostat GISCO NUTS 2024 Level 3, 1:1M",
+                "url": "https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html",
                 "sha256": sha256(DISTRICT_PATH),
             },
         ],

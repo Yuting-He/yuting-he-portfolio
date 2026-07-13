@@ -1,25 +1,26 @@
 {
   "schema": "heatlens-spatial-manifest/v1",
-  "generated_at": "2026-07-12T22:57:40Z",
+  "generated_at": "2026-07-13T07:11:10Z",
   "crosswalk": {
     "method": "Exact polygon intersection area in ETRS89 / LAEA Europe",
     "analysis_crs": "EPSG:3035",
     "minimum_overlap_km2": 0.001,
-    "records": 2139,
+    "records": 2273,
     "basins": 614,
     "districts": 400,
     "unmatched_basins": [
+      "2080493850",
+      "2080495300",
       "2080385760",
-      "2080414760",
       "2080437090",
       "2080492760",
-      "2080491750",
       "2080375510",
+      "2080410910",
       "2080416800",
-      "2080420760",
-      "2080360340"
+      "2080360340",
+      "2080391040"
     ],
-    "sha256": "0d6535da281058c3b81417dc24c4a95a6d24642b0020e53a1655b5012982be26"
+    "sha256": "50d6de8a50b740ce41531aef5a80fe8a55ae6596c9ec2ee30a472a2b4d1945ea"
   },
   "assets": [
     {
@@ -29,10 +30,16 @@
       "sha256": "265140b8c5efd879725645d677a90e442c041299d865696951b331e6090bd694"
     },
     {
+      "path": "assets/nuts1-de.geojson",
+      "source": "Eurostat GISCO NUTS 2024 Level 1, 1:1M",
+      "url": "https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html",
+      "sha256": "551fa53f5beee050a2ad5e4320059fd834f698afbd92cacfcefb359663b97fdf"
+    },
+    {
       "path": "assets/nuts3-de.geojson",
-      "source": "Eurostat GISCO NUTS 2024 Level 3",
-      "url": "https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics",
-      "sha256": "96bf0044ec105d53b2415f8c7083211b070dae6367b40e692aa24975be8aa6ed"
+      "source": "Eurostat GISCO NUTS 2024 Level 3, 1:1M",
+      "url": "https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html",
+      "sha256": "d2af2413a9d4eda0bee73398a3c2cb3ac9fab2da10764da8fedcc8bc1135c507"
     }
   ]
 }

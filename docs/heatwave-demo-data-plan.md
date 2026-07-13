@@ -30,15 +30,17 @@ HeatLens keeps the same modelling instincts:
 
 | Layer | Implemented coverage | Responsibility |
 | --- | ---: | --- |
-| State | 16 NUTS-1 regions | national comparison and first drill-down |
-| City / county | 400 NUTS-3 regions | administrative impact index and municipal response |
+| State | 16 NUTS-1 regions, GISCO 2024 1:1M | national comparison and first drill-down |
+| District / urban district | 400 NUTS-3 regions, GISCO 2024 1:1M | administrative impact index and local-authority response |
 | Sub-basin | 614 Germany-clipped HydroBASINS Level 8 polygons | heat, drought, soil-water and hydroclimatic prediction unit |
 
-The model computes each date at the sub-basin level. A reproducible spatial ETL projects both layers to ETRS89 / LAEA Europe (EPSG:3035) and creates 2,139 exact basin x NUTS-3 intersection records. These weights cover all 400 NUTS-3 regions and 605 sub-basins. Nine coastal/border fragments have no actual NUTS-3 intersection and are recorded in the manifest rather than assigned to a nearest region. Administrative scores fail closed when the exact hydrological overlap is below 50% of the selected region.
+The model computes each date at the sub-basin level. A reproducible spatial ETL projects both layers to ETRS89 / LAEA Europe (EPSG:3035) and creates exact basin x NUTS-3 intersection records. These weights cover all 400 NUTS-3 regions; coastal/border fragments without a real NUTS-3 intersection are recorded in the manifest rather than assigned to a nearest region. Administrative scores fail closed when the exact hydrological overlap is below 50% of the selected region.
 
 The crosswalk, generation method, source URLs, unmatched IDs, and SHA-256 checksums are versioned in `assets/spatial-data-manifest.json`. `scripts/build_spatial_crosswalk.py` reproduces the output with Shapely and pyproj.
 
-NUTS-3 is used because it provides a stable Germany-wide layer containing urban districts and rural counties at a web-manageable resolution. True municipality/LAU deployment can be added after population, vulnerability and local heat-plan data are available consistently.
+NUTS-3 is used because it provides a stable Germany-wide layer containing urban districts and rural counties at a web-manageable resolution. The interface calls this layer "district / urban district" rather than "city" because it is not a complete Gemeinde/LAU layer. True municipality deployment should be added only after population, vulnerability, local heat-plan, and governance data are available consistently.
+
+Leaflet overlays these detailed administrative and hydrological polygons on the standard OpenStreetMap raster base map. Roads, settlements, water bodies, and place labels provide local context; risk polygons remain the selectable analytical layer. The public client requests only tiles in the current interactive viewport and retains visible OpenStreetMap attribution.
 
 ## Risk model
 
@@ -63,7 +65,8 @@ Only the HydroBASINS and GISCO geometry is currently bundled and used in calcula
 | Water balance and soil moisture | [ERA5-Land hourly time series](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-timeseries?tab=download) | volumetric soil water levels 1-4, precipitation, surface radiation, total evaporation, vegetation transpiration, potential evaporation, 2 m temperature, wind |
 | Agricultural drought and vegetation response | [Copernicus European Drought Observatory](https://drought.emergency.copernicus.eu/tumbo/edo/map/) | SPI, Soil Moisture Index Anomaly, FAPAR anomaly, Combined Drought Indicator, low-flow context |
 | Hydrological prediction geometry | [HydroBASINS Level 8](https://www.hydrosheds.org/products/hydrobasins) | consistently sized, hierarchically coded sub-basins with upstream/downstream identifiers; 614 polygons after clipping to Germany |
-| National map geometry | [Eurostat GISCO NUTS 2024](https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics) | NUTS-1/2/3 boundaries for aggregation, display and linkage to regional statistics |
+| National map geometry | [Eurostat GISCO NUTS 2024](https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html) | NUTS-1/3 1:1M boundaries for aggregation, display and linkage to regional statistics |
+| Interactive geographic context | [OpenStreetMap standard tile layer](https://operations.osmfoundation.org/policies/tiles/) | roads, settlements, water bodies, land use, and place labels behind analytical polygons |
 | Static landscape and exposure | Copernicus Land Monitoring Service, OpenStreetMap, Eurostat/DESTATIS regional statistics, ESDAC or SoilGrids | imperviousness, green cover, crop/land cover, population density and age proxies, hospitals/cooling sites, soil texture and water-holding capacity |
 
 ### Derived variables

@@ -15,10 +15,12 @@ test("every element id referenced by the application exists in the page", async 
   assert.deepEqual(missing, []);
 });
 
-test("interactive page uses bundled map libraries and exposes scenario status", async () => {
+test("interactive page uses bundled map libraries, OSM tiles, and exposes scenario status", async () => {
   const html = await readFile(new URL("../heatwave-demo.html", import.meta.url), "utf8");
   assert.match(html, /\.\/vendor\/d3\.min\.js/);
-  assert.match(html, /\.\/vendor\/topojson-client\.min\.js/);
+  assert.match(html, /\.\/vendor\/leaflet\.js/);
+  assert.match(html, /\.\/vendor\/leaflet\.css/);
+  assert.match(html, /https:\/\/tile\.openstreetmap\.org/);
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net/);
   assert.match(html, /Static research scenario/);
   assert.match(html, /Check official DWD warnings/);

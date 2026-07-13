@@ -418,38 +418,67 @@ h1 {
 }
 
 #heat-map {
+  position: relative;
+  z-index: 0;
   width: 100%;
   height: min(660px, 64vw);
   min-height: 460px;
   display: block;
   margin-top: 13px;
   background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
-.scope-shape {
-  fill: rgba(44, 112, 143, 0.06);
-  stroke: rgba(20, 43, 56, 0.42);
-  stroke-width: 1.7;
-  pointer-events: none;
+#heat-map.basemap-unavailable {
+  background: repeating-linear-gradient(135deg, var(--soft), var(--soft) 12px, var(--paper) 12px, var(--paper) 24px);
 }
 
-.map-shape {
-  cursor: pointer;
-  stroke: var(--paper);
-  stroke-width: 1.05;
-  transition: fill 150ms ease, stroke 150ms ease, stroke-width 150ms ease;
+#heat-map .leaflet-control-attribution {
+  max-width: min(72%, 420px);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
-.map-shape:hover,
-.map-shape.is-active {
-  stroke: var(--ink-strong);
-  stroke-width: 2.2;
+#heat-map .leaflet-control-attribution a {
+  color: var(--teal-dark);
 }
 
-.map-shape:focus {
-  outline: none;
-  stroke: var(--focus);
-  stroke-width: 3;
+#heat-map .leaflet-control-zoom a {
+  color: var(--ink-strong);
+}
+
+#heat-map .leaflet-control-scale-line {
+  color: var(--ink-strong);
+  background: rgba(255, 255, 255, 0.82);
+  border-color: var(--ink-strong);
+}
+
+.leaflet-tooltip.heat-map-tooltip {
+  padding: 7px 9px;
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid rgba(20, 43, 56, 0.22);
+  border-radius: 4px;
+  box-shadow: 0 3px 12px rgba(8, 26, 35, 0.16);
+}
+
+.heat-map-tooltip > span > strong,
+.heat-map-tooltip > span > span {
+  display: block;
+}
+
+.heat-map-tooltip > span > strong {
+  color: var(--ink-strong);
+}
+
+.heat-map-tooltip > span > span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .map-status {

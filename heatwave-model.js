@@ -1,7 +1,7 @@
 export const ANALYSIS_DATE = "2026-07-11";
 export const MIN_DATE = "2026-07-08";
 export const MAX_DATE = "2026-07-17";
-export const MODEL_VERSION = "0.3.0-scenario";
+export const MODEL_VERSION = "0.4.0-scenario";
 export const SCENARIO_GENERATED_AT = "2026-07-11T06:00:00Z";
 
 export const AUDIENCES = {

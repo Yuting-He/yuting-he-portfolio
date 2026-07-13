@@ -17,7 +17,7 @@ import {
 } from "./heatwave-model.js";
 import { DEFAULT_VIEW, parseViewState, serializeViewState } from "./heatwave-state.js";
 
-const STATE_URL = "./assets/nuts-rg-60m-2024-4326-levl-1.json";
+const STATE_URL = "./assets/nuts1-de.geojson";
 const DISTRICT_URL = "./assets/nuts3-de.geojson";
 const BASIN_URL = "./assets/hydrobasins-de-level8.geojson";
 const CROSSWALK_URL = "./assets/basin-nuts3-crosswalk.json";
@@ -42,7 +42,12 @@ const state = {
   predictionCache: new Map(),
   metricCache: new Map(),
   d3: null,
-  restoreMapFocus: false,
+  leaflet: null,
+  mapInstance: null,
+  riskLayer: null,
+  scopeOverlay: null,
+  featureLayers: new Map(),
+  mapFrameKey: null,
   ready: false
 };
 
@@ -59,10 +64,6 @@ const elements = {
   scopeBack: document.querySelector("#scope-back"),
   regionSelect: document.querySelector("#region-select"),
   map: document.querySelector("#heat-map"),
-  mapSvgTitle: document.querySelector("#map-svg-title"),
-  mapSvgDesc: document.querySelector("#map-svg-desc"),
-  scopeLayer: document.querySelector("#scope-layer"),
-  dataLayer: document.querySelector("#data-layer"),
   mapStatus: document.querySelector("#map-status"),
   selectedKind: document.querySelector("#selected-kind"),
   regionTitle: document.querySelector("#region-title"),
@@ -361,7 +362,7 @@ function renderControls() {
 }
 
 function renderSummary() {
-  elements.coverage.textContent = `${state.stateFeatures.length} states / ${state.districtFeatures.length} local / ${state.basinFeatures.length} basins`;
+  elements.coverage.textContent = `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
   elements.selectedDateValue.textContent = formatDate(state.date);
   elements.predictionUnit.textContent = "HydroBASINS L8";
   elements.dataStatus.textContent = dataStatus(state.date);
@@ -375,7 +376,7 @@ function updateRegionSelect(features) {
   const selected = state.level === "state" ? state.selectedState : state.level === "district" ? state.selectedDistrict : state.selectedBasin;
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = `Choose ${state.level === "district" ? "city / county" : state.level}`;
+  placeholder.textContent = `Choose ${state.level === "district" ? "district / urban district" : state.level}`;
   const nodes = options.map((option) => {
     const node = document.createElement("option");
     node.value = option.id;
@@ -407,62 +408,125 @@ function selectMapUnit(level, id, drill = false) {
   renderAll();
 }
 
+function initializeMap() {
+  if (state.mapInstance) return;
+  const leaflet = globalThis.L;
+  if (!leaflet?.map || !leaflet?.tileLayer || !leaflet?.geoJSON) {
+    throw new Error("Bundled Leaflet library unavailable");
+  }
+  state.leaflet = leaflet;
+  state.mapInstance = leaflet.map(elements.map, {
+    attributionControl: true,
+    keyboard: true,
+    minZoom: 5,
+    maxZoom: 14,
+    preferCanvas: true,
+    scrollWheelZoom: true,
+    zoomControl: true,
+    zoomSnap: 0.25
+  });
+  const tiles = leaflet.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    maxZoom: 19,
+    noWrap: true
+  });
+  tiles.on("tileerror", () => elements.map.classList.add("basemap-unavailable"));
+  tiles.on("tileload", () => elements.map.classList.remove("basemap-unavailable"));
+  tiles.addTo(state.mapInstance);
+  leaflet.control.scale({ imperial: false, maxWidth: 130 }).addTo(state.mapInstance);
+}
+
+function selectedMapId() {
+  if (state.level === "state") return state.selectedState;
+  if (state.level === "district") return state.selectedDistrict;
+  return state.selectedBasin;
+}
+
+function mapStyle(feature) {
+  const id = featureId(feature, state.level);
+  const score = scoreForLayer(metricsForUnit(state.level, id), state.layer);
+  const active = id === selectedMapId();
+  const baseWeight = state.level === "state" ? 1.5 : state.level === "district" ? 1.15 : 0.9;
+  const baseOpacity = state.level === "state" ? 0.52 : state.level === "district" ? 0.44 : 0.38;
+  return {
+    color: active ? "#081a23" : "#f9fbfb",
+    fillColor: fillColor(score),
+    fillOpacity: active ? 0.72 : baseOpacity,
+    lineCap: "round",
+    lineJoin: "round",
+    opacity: active ? 1 : 0.9,
+    weight: active ? 3.2 : baseWeight
+  };
+}
+
+function tooltipContent(feature) {
+  const id = featureId(feature, state.level);
+  const score = scoreForLayer(metricsForUnit(state.level, id), state.layer);
+  const level = severity(score);
+  const scoreLabel = Number.isFinite(score) ? score : "no score";
+  const content = document.createElement("span");
+  const name = document.createElement("strong");
+  const detail = document.createElement("span");
+  name.textContent = featureName(feature, state.level);
+  detail.textContent = `${LAYERS[state.layer]}: ${level.label} ${scoreLabel}`;
+  content.append(name, detail);
+  return content;
+}
+
+function frameKey() {
+  if (state.level === "state") return "state:germany";
+  if (state.level === "district") return `district:${state.selectedState || "germany"}`;
+  return `basin:${state.selectedDistrict || state.selectedState || "germany"}`;
+}
+
+function rebuildMapLayers(features, nextFrameKey) {
+  const leaflet = state.leaflet;
+  if (state.riskLayer) state.mapInstance.removeLayer(state.riskLayer);
+  if (state.scopeOverlay) state.mapInstance.removeLayer(state.scopeOverlay);
+  state.featureLayers.clear();
+  const featureLevel = state.level;
+  state.riskLayer = leaflet.geoJSON({ type: "FeatureCollection", features }, {
+    style: mapStyle,
+    onEachFeature: (feature, layer) => {
+      const id = featureId(feature, featureLevel);
+      layer.bindTooltip(tooltipContent(feature), { className: "heat-map-tooltip", direction: "top", sticky: true });
+      layer.on("click", () => selectMapUnit(featureLevel, id, featureLevel === "state"));
+      state.featureLayers.set(id, layer);
+    }
+  }).addTo(state.mapInstance);
+  const scope = scopeFeature();
+  if (scope) {
+    state.scopeOverlay = leaflet.geoJSON(scope, {
+      interactive: false,
+      style: { color: "#142b38", fill: false, opacity: 0.88, weight: 3 }
+    }).addTo(state.mapInstance);
+  } else {
+    state.scopeOverlay = null;
+  }
+  const bounds = state.riskLayer.getBounds();
+  if (bounds.isValid()) {
+    state.mapInstance.invalidateSize();
+    state.mapInstance.fitBounds(bounds, {
+      animate: false,
+      maxZoom: state.level === "state" ? 6.5 : state.level === "district" ? 8.5 : 10.5,
+      padding: [18, 18]
+    });
+  }
+  state.mapFrameKey = nextFrameKey;
+}
+
 function renderMap() {
   const features = visibleFeatures();
-  const collection = { type: "FeatureCollection", features };
-  const frame = scopeFeature() || collection;
-  const projection = state.d3.geoMercator().fitExtent([[35, 30], [685, 865]], frame);
-  const pathGenerator = state.d3.geoPath(projection);
-  const scope = scopeFeature();
-  const selected = state.level === "state" ? state.selectedState : state.level === "district" ? state.selectedDistrict : state.selectedBasin;
-  const selectedIsVisible = features.some((feature) => featureId(feature, state.level) === selected);
-  const keyboardTarget = selectedIsVisible ? selected : features[0] ? featureId(features[0], state.level) : null;
-
-  elements.scopeLayer.replaceChildren();
-  if (scope) {
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", pathGenerator(scope));
-    path.setAttribute("class", "scope-shape");
-    elements.scopeLayer.append(path);
-  }
-
-  const paths = features.map((feature, index) => {
-    const id = featureId(feature, state.level);
-    const metrics = metricsForUnit(state.level, id);
-    const score = scoreForLayer(metrics, state.layer);
-    const level = severity(score);
-    const scoreLabel = Number.isFinite(score) ? score : "no score";
-    const path = document.createElementNS(SVG_NS, "path");
-    path.setAttribute("d", pathGenerator(feature));
-    path.setAttribute("class", `map-shape${id === selected ? " is-active" : ""}`);
-    path.setAttribute("fill", fillColor(score));
-    path.setAttribute("aria-label", `${featureName(feature, state.level)}: ${level.label} ${scoreLabel}`);
-    path.setAttribute("role", "button");
-    path.setAttribute("focusable", "true");
-    path.setAttribute("tabindex", id === keyboardTarget ? "0" : "-1");
-    path.dataset.unitId = id;
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = `${featureName(feature, state.level)} - ${LAYERS[state.layer]} ${scoreLabel}`;
-    path.append(title);
-    path.addEventListener("click", () => selectMapUnit(state.level, id, state.level === "state"));
-    path.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        state.restoreMapFocus = true;
-        selectMapUnit(state.level, id, state.level === "state");
-        return;
-      }
-      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
-      event.preventDefault();
-      const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1;
-      const nextIndex = (index + direction + paths.length) % paths.length;
-      paths[nextIndex].setAttribute("tabindex", "0");
-      path.setAttribute("tabindex", "-1");
-      paths[nextIndex].focus();
+  const nextFrameKey = frameKey();
+  if (!state.riskLayer || state.mapFrameKey !== nextFrameKey) {
+    rebuildMapLayers(features, nextFrameKey);
+  } else {
+    state.featureLayers.forEach((layer, id) => {
+      layer.setStyle(mapStyle(layer.feature));
+      layer.setTooltipContent(tooltipContent(layer.feature));
+      if (id === selectedMapId()) layer.bringToFront();
     });
-    return path;
-  });
-  elements.dataLayer.replaceChildren(...paths);
+  }
   updateRegionSelect(features);
 
   const stateName = state.selectedState ? featureName(state.stateById.get(state.selectedState), "state") : "Germany";
@@ -470,18 +534,18 @@ function renderMap() {
     elements.scopeLabel.textContent = "National overview";
     elements.mapTitle.textContent = "Germany - states";
   } else if (state.level === "district") {
-    elements.scopeLabel.textContent = "Administrative response layer";
-    elements.mapTitle.textContent = `${stateName} - cities and counties`;
+    elements.scopeLabel.textContent = "NUTS-3 administrative response layer";
+    elements.mapTitle.textContent = `${stateName} - districts and urban districts`;
   } else {
     const districtName = state.selectedDistrict ? featureName(state.districtById.get(state.selectedDistrict), "district") : stateName;
     elements.scopeLabel.textContent = "Hydrological prediction layer";
     elements.mapTitle.textContent = `${districtName} - sub-basins`;
   }
   elements.scopeBack.hidden = state.level === "state";
-  elements.scopeBack.textContent = state.level === "basin" && state.selectedDistrict ? "\u2190 City / county" : "\u2190 Germany";
-  elements.mapStatus.textContent = `${features.length} visible ${state.level === "district" ? "city/county regions" : `${state.level}s`} for ${formatDate(state.date)}.`;
-  elements.mapSvgTitle.textContent = `${LAYERS[state.layer]} for ${formatDate(state.date)}`;
-  elements.mapSvgDesc.textContent = `${features.length} ${state.level} regions. Use the region selector or focus the map and use arrow keys, then Enter, to inspect a region.`;
+  elements.scopeBack.textContent = state.level === "basin" && state.selectedDistrict ? "\u2190 District" : "\u2190 Germany";
+  const unitLabel = state.level === "district" ? "district / urban-district regions" : `${state.level}s`;
+  elements.mapStatus.textContent = `${features.length} visible ${unitLabel} for ${formatDate(state.date)} over OpenStreetMap.`;
+  elements.map.setAttribute("aria-label", `${LAYERS[state.layer]} for ${formatDate(state.date)}. ${features.length} visible ${unitLabel}.`);
 }
 
 function appendSignal(label, value) {
@@ -561,7 +625,7 @@ function renderDetails() {
   const metrics = metricsForUnit(unit.level, unit.id);
   const score = scoreForLayer(metrics, state.layer);
   const level = severity(score);
-  const kind = unit.level === "district" ? "city / county" : unit.level === "basin" ? "sub-basin" : "state";
+  const kind = unit.level === "district" ? "district / urban district" : unit.level === "basin" ? "sub-basin" : "state";
 
   elements.selectedKind.textContent = `Selected ${kind}`;
   elements.regionTitle.textContent = featureName(unit.feature, unit.level);
@@ -604,7 +668,7 @@ function renderResolutionNote() {
   if (state.level === "basin") {
     elements.resolutionNote.textContent = "Sub-basin polygons are the model units. Click one to inspect its daily heat, soil-water, SPI-3, ET, vegetation, and low-flow signals.";
   } else if (state.level === "district") {
-    elements.resolutionNote.textContent = "City/county indices use exact HydroBASINS Level 8 x NUTS-3 overlap areas calculated in EPSG:3035. No nearest-basin values are substituted.";
+    elements.resolutionNote.textContent = "District indices use official GISCO 2024 NUTS-3 1:1M boundaries and exact HydroBASINS Level 8 overlap areas in EPSG:3035. This layer represents Kreise and kreisfreie Stadte, not every municipality.";
   } else {
     elements.resolutionNote.textContent = "State indices aggregate the same exact basin-district overlap weights used by local views; the state layer is an overview, not the prediction resolution.";
   }
@@ -619,14 +683,15 @@ function renderAll() {
   renderDetails();
   renderResolutionNote();
   persistViewState();
-  if (state.restoreMapFocus) {
-    const focusTarget = elements.dataLayer.querySelector('[tabindex="0"]');
-    (focusTarget || elements.regionSelect).focus();
-    state.restoreMapFocus = false;
-  }
 }
 
 function resetSpatialState() {
+  if (state.mapInstance && state.riskLayer) state.mapInstance.removeLayer(state.riskLayer);
+  if (state.mapInstance && state.scopeOverlay) state.mapInstance.removeLayer(state.scopeOverlay);
+  state.riskLayer = null;
+  state.scopeOverlay = null;
+  state.mapFrameKey = null;
+  state.featureLayers.clear();
   state.stateFeatures = [];
   state.districtFeatures = [];
   state.basinFeatures = [];
@@ -655,17 +720,16 @@ async function loadApplication() {
   setLoading(true);
   elements.mapStatus.setAttribute("role", "status");
   try {
-    const [stateTopology, districts, basins, crosswalk] = await Promise.all([
+    initializeMap();
+    const [states, districts, basins, crosswalk] = await Promise.all([
       fetch(STATE_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("State boundaries unavailable"))),
       fetch(DISTRICT_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("District boundaries unavailable"))),
       fetch(BASIN_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Basin boundaries unavailable"))),
       fetch(CROSSWALK_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Spatial crosswalk unavailable")))
     ]);
     const d3 = globalThis.d3;
-    const topojson = globalThis.topojson;
-    if (!d3?.geoMercator || !topojson?.feature) throw new Error("Bundled map libraries unavailable");
-    const object = stateTopology.objects.NUTS_RG_60M_2024_4326;
-    state.stateFeatures = topojson.feature(stateTopology, object).features.filter((feature) => feature.properties.CNTR_CODE === "DE");
+    if (!d3?.geoCentroid) throw new Error("Bundled D3 geography library unavailable");
+    state.stateFeatures = states.features.filter((feature) => feature.properties.CNTR_CODE === "DE");
     state.districtFeatures = districts.features;
     state.basinFeatures = basins.features;
     state.crosswalk = crosswalk;
@@ -678,8 +742,10 @@ async function loadApplication() {
   } catch (error) {
     setLoading(false);
     state.ready = false;
-    elements.scopeLayer.replaceChildren();
-    elements.dataLayer.replaceChildren();
+    if (state.mapInstance && state.riskLayer) state.mapInstance.removeLayer(state.riskLayer);
+    if (state.mapInstance && state.scopeOverlay) state.mapInstance.removeLayer(state.scopeOverlay);
+    state.riskLayer = null;
+    state.scopeOverlay = null;
     elements.signalList.replaceChildren();
     elements.actionList.replaceChildren();
     elements.trend.replaceChildren();
