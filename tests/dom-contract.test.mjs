@@ -15,21 +15,28 @@ test("every element id referenced by the application exists in the page", async 
   assert.deepEqual(missing, []);
 });
 
-test("interactive page uses bundled map libraries, OSM tiles, and exposes scenario status", async () => {
+test("interactive page uses bundled map libraries, OSM tiles, and exposes live-data boundaries", async () => {
   const html = await readFile(new URL("../heatwave-demo.html", import.meta.url), "utf8");
   assert.match(html, /\.\/vendor\/d3\.min\.js/);
   assert.match(html, /\.\/vendor\/leaflet\.js/);
   assert.match(html, /\.\/vendor\/leaflet\.css/);
   assert.match(html, /https:\/\/tile\.openstreetmap\.org/);
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net/);
-  assert.match(html, /Static research scenario/);
+  assert.match(html, /Loading model feed/);
+  assert.match(html, /DWD ICON/);
+  assert.match(html, /official DWD warning/i);
   assert.match(html, /Check official DWD warnings/);
+  assert.match(html, /data-layer="water"/);
+  assert.doesNotMatch(html, /data-layer="drought"/);
 });
 
-test("GitHub Pages deployment is gated by the automated test job", async () => {
+test("GitHub Pages refreshes on schedule and deployment is gated by build tests", async () => {
   const workflow = await readFile(new URL("../.github/workflows/pages.yml", import.meta.url), "utf8");
+  assert.match(workflow, /schedule:/);
+  assert.match(workflow, /npm run refresh-data/);
   assert.match(workflow, /run: npm test/);
-  assert.match(workflow, /deploy:\s*\n\s*needs: test/);
+  assert.match(workflow, /deploy:\s*\n\s*needs: build/);
+  assert.match(workflow, /steps\.refresh\.outcome/);
 });
 
 test("all local page assets and navigation targets exist", async () => {

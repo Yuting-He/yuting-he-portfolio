@@ -3,75 +3,86 @@ import assert from "node:assert/strict";
 import {
   aggregatePredictions,
   actionsFor,
-  buildBasinPrediction,
-  dataStatus,
-  dateRange,
-  dateOffset,
-  isScenarioDate,
+  buildLiveBasinPrediction,
+  freshnessStatus,
+  isIsoDate,
   scoreForLayer
 } from "../heatwave-model.js";
 
-const basin = {
-  id: "2080469900",
-  centroid: [13.2, 52.4],
-  properties: { SUB_AREA: 420 }
+const basin = { id: "2080469900", properties: { SUB_AREA: 420 } };
+const mildDay = {
+  date: "2026-07-20",
+  tmaxC: 27,
+  tminC: 15,
+  apparentMaxC: 28,
+  precipitationMm: 1,
+  et0Mm: 4,
+  vpdMaxKpa: 1.8,
+  soilMoistureM3M3: 0.24,
+  waterBalance3dMm: -6,
+  heatPersistenceDays: 0,
+  dryPersistenceDays: 2,
+  completeness: 100
 };
 
-test("date window covers analysis and nearby dates", () => {
-  const dates = dateRange();
-  assert.equal(dates.length, 10);
-  assert.ok(dates.includes("2026-07-11"));
-  assert.equal(dataStatus("2026-07-14"), "Static scenario +3d");
-  assert.equal(isScenarioDate("2026-07-17"), true);
-  assert.equal(isScenarioDate("2026-07-18"), false);
-  assert.throws(() => dateOffset("2026-07-18"), RangeError);
+test("ISO dates and source freshness fail closed", () => {
+  assert.equal(isIsoDate("2026-07-20"), true);
+  assert.equal(isIsoDate("2026-02-30"), false);
+  assert.equal(isIsoDate("9999-99-99"), false);
+  assert.equal(freshnessStatus("2026-07-20T06:00:00Z", Date.parse("2026-07-20T12:00:00Z")).label, "Current");
+  assert.equal(freshnessStatus("2026-07-18T12:00:00Z", Date.parse("2026-07-20T12:00:00Z")).stale, true);
+  assert.equal(freshnessStatus("not-a-date").stale, true);
 });
 
-test("basin predictions are deterministic and date-sensitive", () => {
-  const first = buildBasinPrediction(basin, "2026-07-11");
-  const repeated = buildBasinPrediction(basin, "2026-07-11");
-  const later = buildBasinPrediction(basin, "2026-07-14");
-  assert.deepEqual(first, repeated);
-  assert.notEqual(first.heatScore, later.heatScore);
-  assert.ok(later.consistencyProxy < first.consistencyProxy);
+test("live indices respond monotonically to hotter and drier inputs", () => {
+  const mild = buildLiveBasinPrediction(basin, mildDay);
+  const hotDry = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    tmaxC: 39,
+    tminC: 25,
+    apparentMaxC: 42,
+    et0Mm: 6.5,
+    vpdMaxKpa: 3.5,
+    soilMoistureM3M3: 0.12,
+    waterBalance3dMm: -18,
+    heatPersistenceDays: 4,
+    dryPersistenceDays: 7
+  });
+  assert.ok(hotDry.heatScore > mild.heatScore);
+  assert.ok(hotDry.waterStressScore > mild.waterStressScore);
+  assert.ok(hotDry.heatScore <= 100);
+  assert.ok(hotDry.waterStressScore <= 100);
 });
 
 test("aggregated scores remain in the public 0-100 range", () => {
   const predictions = [
-    buildBasinPrediction(basin, "2026-07-12"),
-    buildBasinPrediction({ ...basin, id: "2080469901", centroid: [8.6, 49.4] }, "2026-07-12")
+    buildLiveBasinPrediction(basin, mildDay),
+    buildLiveBasinPrediction({ ...basin, id: "2080469901" }, { ...mildDay, tmaxC: 31, apparentMaxC: 33 })
   ];
   for (const audience of ["residents", "farmers", "municipal"]) {
     const metrics = aggregatePredictions(predictions, { audience, exposure: 72, cropSensitivity: 65 });
-    for (const layer of ["impact", "heat", "drought"]) {
+    for (const layer of ["impact", "heat", "water"]) {
       assert.ok(scoreForLayer(metrics, layer) >= 0);
       assert.ok(scoreForLayer(metrics, layer) <= 100);
     }
+    assert.equal(metrics.completeness, 100);
   }
 });
 
-test("aggregation rejects empty prediction groups", () => {
+test("invalid or mixed live inputs are rejected", () => {
+  assert.throws(() => buildLiveBasinPrediction(basin, { ...mildDay, tmaxC: null }), /finite source values/);
+  const first = buildLiveBasinPrediction(basin, mildDay);
+  const second = buildLiveBasinPrediction({ ...basin, id: "2" }, { ...mildDay, date: "2026-07-21" });
   assert.throws(() => aggregatePredictions([]), /At least one basin/);
-  assert.throws(() => aggregatePredictions([buildBasinPrediction(basin, "2026-07-11")], { audience: "insurer" }), /Unknown audience/);
-});
-
-test("unknown public layers are rejected instead of silently returning impact", () => {
-  const metrics = aggregatePredictions([buildBasinPrediction(basin, "2026-07-11")]);
-  assert.throws(() => scoreForLayer(metrics, "wind"), /Unknown risk layer/);
-});
-
-test("invalid model inputs fail closed", () => {
-  assert.throws(() => buildBasinPrediction({ ...basin, centroid: [Number.NaN, 52] }, "2026-07-11"), /finite longitude/);
-  const first = buildBasinPrediction(basin, "2026-07-11");
-  const second = buildBasinPrediction({ ...basin, id: "2" }, "2026-07-12");
-  assert.throws(() => aggregatePredictions([first, second]), /share one scenario date/);
-  assert.throws(() => aggregatePredictions([{ ...first, heatScore: Number.NaN }]), /finite proxy values/);
+  assert.throws(() => aggregatePredictions([first], { audience: "insurer" }), /Unknown audience/);
+  assert.throws(() => aggregatePredictions([first, second]), /share one forecast date/);
+  assert.throws(() => scoreForLayer(aggregatePredictions([first]), "wind"), /Unknown risk layer/);
 });
 
 test("farmer prompts remain evidence checks rather than autonomous actions", () => {
-  const metrics = aggregatePredictions([buildBasinPrediction(basin, "2026-07-11")], { audience: "farmers" });
+  const metrics = aggregatePredictions([buildLiveBasinPrediction(basin, mildDay)], { audience: "farmers" });
   const guidance = actionsFor(metrics, "farmers");
-  assert.doesNotMatch(guidance.actions.join(" "), /Irrigation priority/i);
+  assert.match(guidance.actions.join(" "), /field probe/i);
   assert.match(guidance.actions.join(" "), /do not change harvest timing/i);
   assert.match(guidance.note, /agronomic professional/i);
 });

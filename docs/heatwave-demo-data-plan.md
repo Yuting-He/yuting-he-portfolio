@@ -1,122 +1,112 @@
-# HeatLens Germany: Data and Decision Design
+# HeatLens Germany: Operational Data and Decision Design
 
-## Purpose and boundary
+## Product boundary
 
-HeatLens Germany is a portfolio prototype for a Germany-wide heatwave resilience map. It is designed to show how GIS, hydroclimatic data, uncertainty-aware scoring, and AI-assisted product implementation can support distinct decision contexts:
+HeatLens Germany is a Germany-wide heat and water-stress screening application for three decision contexts:
 
-- residents: low-regret daily heat and garden guidance;
-- farmers: irrigation and crop-stress monitoring prompts, never an unverified harvest instruction;
-- municipal teams: heat-protocol, outdoor-work, cool-space, and service-readiness prompts.
+- residents receive low-regret daily heat and garden prompts;
+- farmers receive monitoring and evidence-check prompts, never an autonomous irrigation or harvest instruction;
+- municipal teams receive preparedness checks tied back to official warning channels and local heat plans.
 
-The current front-end runs a deterministic ten-day synthetic scenario from 8-17 July 2026. It exercises the complete spatial and decision workflow, but it is not an operational warning service, a clinical tool, or agronomic advice. Environmental values are deliberately labelled as proxies rather than real UTCI, SPI, soil-moisture, ET, FAPAR, or flow products.
-
-## 2026 motivation, without over-attribution
-
-The summer 2026 backdrop is a reason to build preparedness tools, not evidence that a particular German heat dome was caused by one climate driver. In July 2026 the [WMO reported a developing and strengthening El Nino](https://wmo.int/media/news/el-nino-forecast-intensify-increasing-likelihood-of-extreme-weather), which raises the global likelihood of heatwaves and other extremes; [WHO/Europe also warned of continued extreme-heat risk in the region](https://www.who.int/europe/news/item/07-07-2026-statement---extreme-heat--more-deadly-weeks-may-still-lie-ahead-for-the-european-region). European summer circulation is strongly shaped by regional weather patterns and the North Atlantic, so HeatLens does not use ENSO as a direct German heat-alert trigger. It uses local forecast, thermal-comfort, land-surface, and water-balance signals instead.
+The environmental inputs and DWD warning feed are live. The custom 0-100 indices are not calibrated probabilities and are not an official warning service, clinical tool, or agronomic decision system.
 
 ## Connection to `material_prep`
 
-The prototype extends the CAMELS-DE Neckar GNN drought teaching work rather than treating heat as a disconnected topic. The previous project used 21 catchment nodes, 12 months of hydroclimatic history, static soil/landscape/hydrological attributes, and spatial adjacency to predict a one-month-ahead four-class SPI-like drought target. A stored training history reported validation macro-F1 of about 0.75; that historical result is not reproduced or independently verified in this repository.
+The project extends the CAMELS-DE Neckar GNN drought teaching work in `material_prep`. That work organized time-varying hydroclimate inputs and static catchment attributes on a river graph for one-month-ahead drought classification. HeatLens keeps the same modelling discipline while moving to a public operational-data product:
 
-HeatLens keeps the same modelling instincts:
+- hydrological units remain the prediction layer;
+- static sensitivity stays separate from time-varying forcing;
+- spatial aggregation is explicit and reproducible;
+- freshness and completeness are checked before presentation;
+- consequential actions require official evidence and a responsible human.
 
-- use spatial units and joinable GIS layers;
-- separate static vulnerability from time-varying forcing;
-- create explicit temporal features and quality checks;
-- keep current prompts low-regret and require human verification before consequential action;
-- validate a model spatially and temporally before turning it into operational advice.
+The current live index is deliberately interpretable. A Germany-wide graph model should replace it only after temporal and spatial backtesting demonstrates a reliable improvement.
 
-## Implemented spatial architecture
+## Spatial architecture
 
-| Layer | Implemented coverage | Responsibility |
+| Layer | Coverage | Responsibility |
 | --- | ---: | --- |
-| State | 16 NUTS-1 regions, GISCO 2024 1:1M | national comparison and first drill-down |
-| District / urban district | 400 NUTS-3 regions, GISCO 2024 1:1M | administrative impact index and local-authority response |
-| Sub-basin | 614 Germany-clipped HydroBASINS Level 8 polygons | heat, drought, soil-water and hydroclimatic prediction unit |
+| State | 16 NUTS-1 regions | national comparison and first drill-down |
+| District / urban district | 400 NUTS-3 regions | administrative screening and response context |
+| Sub-basin | 614 Germany-clipped HydroBASINS Level 8 polygons | prediction and hydroclimatic feature unit |
 
-The model computes each date at the sub-basin level. A reproducible spatial ETL projects both layers to ETRS89 / LAEA Europe (EPSG:3035) and creates exact basin x NUTS-3 intersection records. These weights cover all 400 NUTS-3 regions; coastal/border fragments without a real NUTS-3 intersection are recorded in the manifest rather than assigned to a nearest region. Administrative scores fail closed when the exact hydrological overlap is below 50% of the selected region.
+The spatial ETL projects GISCO NUTS 2024 and HydroBASINS to EPSG:3035 and calculates exact polygon intersections. The browser aggregates basin predictions with these versioned overlap areas. Administrative scores are suppressed below 50% exact hydrological coverage.
 
-The crosswalk, generation method, source URLs, unmatched IDs, and SHA-256 checksums are versioned in `assets/spatial-data-manifest.json`. `scripts/build_spatial_crosswalk.py` reproduces the output with Shapely and pyproj.
+NUTS-3 is a stable Germany-wide district layer, not a full municipality layer. A future Gemeinde/LAU view needs reliable local vulnerability, heat-plan, and governance data before it can support stronger claims.
 
-NUTS-3 is used because it provides a stable Germany-wide layer containing urban districts and rural counties at a web-manageable resolution. The interface calls this layer "district / urban district" rather than "city" because it is not a complete Gemeinde/LAU layer. True municipality deployment should be added only after population, vulnerability, local heat-plan, and governance data are available consistently.
+## Live ingestion
 
-Leaflet overlays these detailed administrative and hydrological polygons on the standard OpenStreetMap raster base map. Roads, settlements, water bodies, and place labels provide local context; risk polygons remain the selectable analytical layer. The public client requests only tiles in the current interactive viewport and retains visible OpenStreetMap attribution.
+`scripts/fetch-live-data.mjs` runs the following pipeline:
 
-## Risk model
+1. Calculate one representative centroid for each HydroBASINS Level 8 polygon.
+2. Query the [Open-Meteo DWD ICON API](https://open-meteo.com/en/docs/dwd-api) in batches of at most 100 coordinates.
+3. Respect the free API's [600 calls/minute limit](https://open-meteo.com/en/pricing) with serial batching, delay, and exponential 429 retry.
+4. Aggregate hourly VPD and 3-81 cm depth-weighted soil moisture to daily values.
+5. Retain daily maximum/minimum temperature, maximum apparent temperature, precipitation, and FAO reference evapotranspiration.
+6. Derive forecast persistence and a rolling three-day `precipitation - ET0` balance.
+7. Parse the [official DWD warning JSONP feed](https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html) into state-linked warning context.
+8. Validate 614 unique basins, a common nine-date window, finite core values, and at least 85% field completeness before an atomic write.
 
-Each synthetic feature is mapped to 0-100 with transparent bounded response curves chosen for interface testing. These are not fitted seasonal or local reference distributions. The public map exposes the scenario components, exact spatial coverage, a deterministic consistency proxy, and the non-operational boundary.
+The public date window contains two retrospective model dates and seven forecast dates. Ingestion requests four retrospective days, using the first two only as hidden context so the earliest displayed three-day water balance is complete. The DWD ICON seamless product uses the highest-resolution available ICON model for each lead time. The public snapshot records its generation time, source model, variables, warning issue time, and data completeness.
 
-| Decision lens | Indicative score composition | Intended action level |
-| --- | --- | --- |
-| Residents | heat stress 72%, exposure 20%, drought context 8% | information and low-regret protective actions |
-| Farmers | drought stress 62%, heat stress 26%, crop sensitivity 12% | monitoring and conditional field checks |
-| Municipal | heat stress 55%, synthetic exposure assumption 22%, drought stress 15%, persistence proxy 8% | evidence checks; authority verifies escalation |
+GitHub Actions refreshes every three hours. At roughly 4,912 weighted coordinate calls per day, this stays below the documented 10,000-call daily and 300,000-call monthly free-tier limits. A failed scheduled refresh does not replace the deployed Pages artifact. The client classifies snapshots as current up to 18 hours, delayed from 18 to 36 hours, and stale after 36 hours. Stale scores remain visible for audit while action prompts are suppressed.
 
-This is a transparent synthetic scenario score, not a calibrated impact model. The exposure and crop-sensitivity inputs are deterministic assumptions derived for interface testing, not observed vulnerability data. A production model would estimate probabilities for concrete outcomes, calibrate them by German region and season, and report uncertainty intervals.
+## Screening indices
 
-## Open data stack
+All component transforms are bounded linear response curves. They are engineering thresholds for a transparent screening product, not fitted German climatological percentiles.
 
-Only the HydroBASINS and GISCO geometry is currently bundled and used in calculations. DWD, ERA5, EDO, land-cover, population, health, and crop sources below are the target operational data architecture, not data already powering the public scenario.
+### Heat stress
 
-| Need | Candidate open source | Variables and use |
-| --- | --- | --- |
-| Official short-horizon weather and alerts | [DWD Open Data and Climate Data Center](https://www.dwd.de/EN/ourservices/cdc/cdc_ueberblick-klimadaten_en.html), [DWD CAP alert products](https://opendata.dwd.de/weather/alerts/cap/) | 2 m temperature, humidity/dew point, wind, radiation, precipitation, station observations, forecast fields, official alert status |
-| Human heat stress | [ERA5-HEAT / UTCI](https://cds.climate.copernicus.eu/datasets/derived-utci-historical?tab=overview) | UTCI, heat-stress climatology, event thresholds |
-| Water balance and soil moisture | [ERA5-Land hourly time series](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-timeseries?tab=download) | volumetric soil water levels 1-4, precipitation, surface radiation, total evaporation, vegetation transpiration, potential evaporation, 2 m temperature, wind |
-| Agricultural drought and vegetation response | [Copernicus European Drought Observatory](https://drought.emergency.copernicus.eu/tumbo/edo/map/) | SPI, Soil Moisture Index Anomaly, FAPAR anomaly, Combined Drought Indicator, low-flow context |
-| Hydrological prediction geometry | [HydroBASINS Level 8](https://www.hydrosheds.org/products/hydrobasins) | consistently sized, hierarchically coded sub-basins with upstream/downstream identifiers; 614 polygons after clipping to Germany |
-| National map geometry | [Eurostat GISCO NUTS 2024](https://gisco-services.ec.europa.eu/distribution/v2/nuts/nuts-2024-files.html) | NUTS-1/3 1:1M boundaries for aggregation, display and linkage to regional statistics |
-| Interactive geographic context | [OpenStreetMap standard tile layer](https://operations.osmfoundation.org/policies/tiles/) | roads, settlements, water bodies, land use, and place labels behind analytical polygons |
-| Static landscape and exposure | Copernicus Land Monitoring Service, OpenStreetMap, Eurostat/DESTATIS regional statistics, ESDAC or SoilGrids | imperviousness, green cover, crop/land cover, population density and age proxies, hospitals/cooling sites, soil texture and water-holding capacity |
+| Component | Weight | 0-100 response range |
+| --- | ---: | --- |
+| Daily maximum temperature | 34% | 25-40 C |
+| Daily maximum apparent temperature | 30% | 26-42 C |
+| Daily minimum temperature | 18% | 16-26 C |
+| Forecast heat persistence | 10% | 0-4 days at or above 30 C |
+| Daily maximum VPD | 8% | 0.8-3.6 kPa |
 
-### Derived variables
+### Water stress
 
-1. Heat hazard: daily maximum and minimum temperature, UTCI maximum, tropical nights, heatwave duration, humidity, wind, radiation, and ensemble exceedance probability.
-2. Atmospheric demand: vapour-pressure deficit (VPD), reference ET0, actual ET, potential ET, and a seven-day ET deficit.
-3. Water availability: layer-weighted root-zone soil-water percentile, antecedent precipitation, SPI-1/SPI-3, soil moisture anomaly, and baseflow or low-flow indicators where appropriate.
-4. Vegetation and agriculture: FAPAR anomaly, land cover/crop type, phenology, irrigation context, soil available-water capacity, and field sensor inputs where a user supplies them.
-5. Exposure and response capacity: population and age structure, urban imperviousness/tree cover, healthcare/cooling-site proximity, outdoor-worker locations, and municipal service constraints.
+| Component | Weight | 0-100 response range |
+| --- | ---: | --- |
+| 3-81 cm root-zone soil-moisture deficit | 38% | 0.36 to 0.12 m3/m3 |
+| Three-day `precipitation - ET0` deficit | 28% | 0 to -18 mm |
+| Daily FAO ET0 | 12% | 2-7 mm |
+| Daily maximum VPD | 12% | 0.8-3.6 kPa |
+| Dry persistence | 10% | 0-7 days |
 
-## Data workflow
+Absolute soil moisture is sensitive to soil texture and model bias. Until SoilGrids/ESDAC properties and local seasonal percentiles are integrated, this layer is called **water stress**, not drought probability.
 
-```text
-DWD observations + forecast + CAP alerts
-ERA5-Land + ERA5-HEAT + EDO drought indicators
-HydroBASINS L8 + GISCO NUTS + exposure/soil/land-cover layers
-                 |
-                 v
-        QA, temporal alignment, bias checks, freshness flags
-                 |
-                 v
-        daily sub-basin feature store and prediction
-                 |
-                 v
-    exact spatial crosswalk to NUTS-3 and state aggregation
-                 |
-                 v
-  transparent scenario components + low-regret evidence checks
-```
+### Role-specific impact screening
 
-## Safety and uncertainty rules
+| Lens | Composition |
+| --- | --- |
+| Residents | heat 78%, urban/rural exposure assumption 15%, water stress 7% |
+| Farmers | water stress 55%, heat 30%, crop-sensitivity assumption 15% |
+| Municipal | heat 66%, exposure assumption 22%, water stress 7%, heat persistence 5% |
 
-- The current deterministic consistency proxy is not forecast confidence and must never be presented as one. A future confidence score must combine ensemble agreement, source agreement, data freshness, and spatial coverage with auditable components.
-- Residents receive only low-regret suggestions unless an official DWD alert is present.
-- Farmers never receive an autonomous instruction to harvest, irrigate, or deploy costly protection. The interface must request a local station check, field observation, crop-stage check, water-allocation check, and human agronomic confirmation before such a decision.
-- Municipal prompts must link back to the responsible authority's local heat plan and official DWD/BBK warning channels.
-- The current JSON export retains model version, scenario date, region, score components, spatial coverage, and the non-operational boundary. A future service should additionally retain source timestamps, forecast run, recommendation policy version, and user acknowledgement for review.
+The fixed urban/rural and crop-sensitivity values are openly labelled assumptions. They prevent the interface from implying that uncollected population, age, crop, soil, healthcare, or response-capacity data already exists.
 
-## Evaluation before operational use
+## Official warnings remain separate
 
-1. Backtest heat and drought alerts by NUTS-2/3 and by urban/rural/crop strata.
-2. Measure probabilistic calibration, Brier score, precision/recall, lead time, false-alarm rate, and missed-event rate.
-3. Evaluate impact links separately: health outcomes, irrigation demand, crop-stress observations, and municipal service load do not share one ground truth.
-4. Run human-in-the-loop pilots with a public-health professional, an agricultural advisor, and a municipal heat officer.
-5. Compare an interpretable baseline against the GNN-informed drought module, and retain the simpler model unless the spatial model produces reliable, explainable benefit.
+The DWD warning feed is presented in its own block for the selected state. It is never added to the custom 0-100 score. A missing heat warning in the current snapshot is not presented as an all-clear for a later selected date. Users are always linked to the official DWD service.
 
-## Next production steps
+## Current limitations
 
-- Replace deterministic scenario forcing with scheduled DWD forecast/observation ingestion and ERA5/EDO lagged features.
-- Replace the current browser-loaded exact crosswalk with a server-side versioned feature store when live data volumes require it.
-- Calibrate sub-basin probabilities against observed heat, soil-moisture, low-flow, crop-stress and health outcomes; publish uncertainty intervals.
-- Use HydroBASINS `NEXT_DOWN` and Pfafstetter codes to extend the Neckar GNN concept to Germany-wide river-network message passing.
-- Add LAU/municipality and neighbourhood views only where local exposure, heat-plan and governance data support a reliable decision product.
+- One model-grid sample represents each sub-basin; it is not a raster zonal mean or downscaled urban heat field.
+- Deterministic ICON output does not provide forecast probability or ensemble spread in this build.
+- Persistence has only two retrospective days of context and can undercount events that began earlier.
+- Apparent temperature is not UTCI and does not replace a calibrated human thermal-stress product.
+- Root-zone depth weighting does not yet account for local soil texture, rooting depth, groundwater, irrigation, or crop stage.
+- NUTS-3 impact sensitivity is assumed, not observed.
+- Open-Meteo's free endpoint is suitable for this non-commercial portfolio prototype but has rate limits and no service-level guarantee.
+
+## Production roadmap
+
+1. Backtest by season, NUTS region, urban/rural class, and crop class using archived model runs without look-ahead bias.
+2. Add DWD station verification, raster zonal statistics, and bias correction by lead time.
+3. Derive local soil-moisture percentiles with ERA5-Land, EDO, SoilGrids/ESDAC, and field observations.
+4. Add probabilistic ICON ensemble features and report calibration, Brier score, precision/recall, false-alarm rate, missed-event rate, and lead time.
+5. Integrate population age, imperviousness, tree cover, care facilities, crop type, phenology, and response capacity under documented licences and governance.
+6. Compare an interpretable baseline with a HydroBASINS graph model using `NEXT_DOWN` and Pfafstetter topology; retain the graph model only if it adds stable, explainable skill.
+7. Run human-in-the-loop pilots with public-health, agricultural, and municipal heat-response professionals before any consequential recommendation.

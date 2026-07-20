@@ -1,29 +1,29 @@
 # Yuting He Portfolio and HeatLens Germany
 
-Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applied AI implementation. The repository also contains **HeatLens Germany**, a public multi-scale heat and drought research application.
+Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applied AI implementation. The repository includes **HeatLens Germany**, a live multi-scale heat and water-stress screening application.
 
 - Portfolio: <https://yuting-he.github.io/yuting-he-portfolio/>
 - HeatLens: <https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html>
 
 ## HeatLens capabilities
 
-- 614 Germany-clipped HydroBASINS Level 8 scenario units
-- exact sub-basin x NUTS-3 overlap records in EPSG:3035
+- live DWD ICON model fields via the Open-Meteo DWD API
+- a separately displayed official DWD warning snapshot
+- two retrospective and seven forecast dates
+- 614 Germany-clipped HydroBASINS Level 8 prediction units
+- exact sub-basin x NUTS-3 overlap weights in EPSG:3035
 - 400 NUTS-3 district / urban-district views and 16 state summaries
-- official GISCO 2024 1:1M administrative boundaries over an interactive OpenStreetMap base map
-- nearby-date exploration for 8-17 July 2026
+- GISCO 2024 1:1M boundaries over an OpenStreetMap base map
 - resident, farmer, and municipal decision lenses
-- impact, heat-like, and drought-like scenario layers
+- heat, water-stress, and role-specific impact screening layers
 - shareable URL state and JSON snapshot export
-- keyboard-operable Leaflet map plus native region selector
-- fail-closed handling when exact hydrological coverage is below 50%
-- bundled D3 and Leaflet browser libraries; standard OpenStreetMap raster tiles load for the current interactive view
+- freshness, source completeness, and spatial coverage gates
 
-## Important data boundary
+## Decision boundary
 
-HeatLens currently uses real open spatial geometry but **synthetic deterministic scenario proxies** for the displayed environmental values. The values are not DWD observations, a live forecast, calibrated UTCI/SPI/soil-moisture products, medical guidance, or agronomic instruction. The application links to official DWD warnings and suppresses actionable output where spatial coverage is insufficient.
+The weather and warning feeds are real, but HeatLens's 0-100 scores are transparent **uncalibrated screening indices**. They are not probabilities, observations, official warnings, medical advice, or agronomic instructions. Official DWD warning context is displayed separately and is never blended into the custom score.
 
-The product is useful as an auditable GIS and decision-design research application. Operational warning use requires the real-data, calibration, validation, freshness, and governance work documented in [`docs/heatwave-demo-data-plan.md`](docs/heatwave-demo-data-plan.md).
+The current impact layer still uses explicit urban/rural exposure and crop-sensitivity assumptions. A snapshot older than 36 hours remains visible for audit, but the application suppresses suggested actions. See [`docs/heatwave-demo-data-plan.md`](docs/heatwave-demo-data-plan.md) for formulas, limitations, governance, and the calibration roadmap.
 
 ## Local development
 
@@ -33,34 +33,41 @@ Node.js 20 or newer is required. No package install is necessary.
 npm run serve
 ```
 
-Open <http://127.0.0.1:4173/>. Run all model, URL-state, spatial-integrity, and DOM-contract tests with:
+Open <http://127.0.0.1:4173/> and run all tests with:
 
 ```bash
 npm test
 ```
 
-## Rebuild spatial weights
+Refresh the live snapshot with internet access:
 
-The checked-in crosswalk is reproducible with Shapely 2 and pyproj 3:
+```bash
+npm run refresh-data
+```
+
+The ingestion job queries coordinates in rate-limited batches, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. GitHub Actions repeats this every three hours. A failed scheduled refresh skips deployment so the last successful Pages release stays online.
+
+## Spatial ETL
+
+Rebuild the exact-area crosswalk with Shapely 2 and pyproj 3:
 
 ```bash
 python scripts/build_spatial_crosswalk.py
 ```
 
-The script projects both layers to ETRS89 / LAEA Europe (EPSG:3035), calculates exact polygon intersections, and writes `assets/basin-nuts3-crosswalk.json` plus `assets/spatial-data-manifest.json`. The manifest records sources, method, counts, unmatched border fragments, and SHA-256 checksums.
+The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EPSG:3035), calculates polygon intersections, and updates the spatial manifest and checksums.
 
 ## Repository guide
 
-- `index.html`, `styles.css` - portfolio homepage
-- `heatwave-demo.html`, `heatwave-demo.css` - HeatLens product interface
-- `heatwave-demo.js` - map, drill-down, URL state, export, and failure handling
-- `heatwave-model.js` - deterministic scenario proxy and aggregation model
-- `heatwave-state.js` - validated shareable view state
-- `assets/` - spatial geometry, overlap weights, manifest, CV, and portfolio imagery
+- `heatwave-demo.html`, `heatwave-demo.css`, `heatwave-demo.js` - live application interface
+- `heatwave-model.js` - transparent heat, water-stress, and impact screening model
+- `heatwave-state.js` - validated shareable view state and dynamic date resolution
+- `assets/live/forecast.json` - last validated operational snapshot
+- `scripts/fetch-live-data.mjs` - Open-Meteo DWD ICON and DWD warning ingestion
 - `scripts/build_spatial_crosswalk.py` - reproducible exact-area spatial ETL
-- `tests/` - model, spatial, URL-state, and page-contract checks
-- `.github/workflows/pages.yml` - test-gated GitHub Pages deployment
+- `tests/` - model, live-data, spatial, state, and page-contract checks
+- `.github/workflows/pages.yml` - three-hour refresh, test, and Pages deployment
 
 ## License and attribution
 
-Project code is available under the [MIT License](LICENSE). Bundled library and data attribution is recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the data-design document. Source dataset terms continue to apply.
+Project code is available under the [MIT License](LICENSE). Weather data is attributed to Open-Meteo under CC BY 4.0 and uses DWD ICON model output. Spatial, warning, map-tile, and bundled-library terms are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); original source terms continue to apply.

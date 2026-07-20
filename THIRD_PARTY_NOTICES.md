@@ -14,3 +14,10 @@ Spatial assets are **not** relicensed under the project's MIT License. Their ori
 - OpenStreetMap standard raster tiles and place context: &copy; OpenStreetMap contributors. Copyright and licence: <https://www.openstreetmap.org/copyright>. Tile usage policy: <https://operations.osmfoundation.org/policies/tiles/>.
 
 The processed files, exact-intersection method, source URLs, and checksums are recorded in `assets/spatial-data-manifest.json`.
+
+## Weather and warning data
+
+- Weather forecast data: [Open-Meteo DWD ICON API](https://open-meteo.com/en/docs/dwd-api), using Deutscher Wetterdienst ICON model output. Open-Meteo data is provided under CC BY 4.0 with attribution; free-endpoint usage terms and limits are published at <https://open-meteo.com/en/terms>.
+- Official warning context: Deutscher Wetterdienst warning JSONP feed. Source description and reuse guidance: <https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html>.
+
+Weather and warning records in `assets/live/forecast.json` retain their source terms and are not relicensed under the project's MIT License.

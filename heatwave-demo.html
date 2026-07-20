@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="HeatLens Germany: multi-scale heatwave and drought resilience decision support by Yuting He.">
+    <meta name="description" content="HeatLens Germany: live DWD ICON heat and water-stress screening across German sub-basins, districts, and states.">
     <meta name="theme-color" content="#081a23">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'">
     <link rel="icon" href="data:,">
     <link rel="canonical" href="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
-    <meta property="og:title" content="HeatLens Germany | Multi-scale Heat and Drought Scenario Explorer">
-    <meta property="og:description" content="An open GIS research application connecting sub-basin scenarios to German district, urban-district, and state decision views.">
+    <meta property="og:title" content="HeatLens Germany | Live Heat and Water-Stress Screening">
+    <meta property="og:description" content="An open GIS application connecting live DWD ICON model fields and official DWD warning context to German sub-basin, district, and state views.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
-    <title>HeatLens Germany | Multi-scale Heat and Drought Risk</title>
+    <title>HeatLens Germany | Live Heat and Water-Stress Screening</title>
     <link rel="stylesheet" href="./vendor/leaflet.css">
     <link rel="stylesheet" href="./heatwave-demo.css">
   </head>
@@ -31,11 +31,11 @@
     <main>
       <section class="demo-intro" aria-labelledby="demo-title">
         <div>
-          <p class="kicker">Germany-wide heat and drought intelligence</p>
+          <p class="kicker">Germany-wide heat and water-stress intelligence</p>
           <h1 id="demo-title">HeatLens Germany</h1>
           <p>
-            Daily sub-basin predictions are translated into state and district risk indices, keeping the hydrology
-            model spatially meaningful while giving residents, farms, and municipalities an administrative view.
+            Live DWD ICON model fields are translated into sub-basin screening indices, then aggregated to state and
+            district views for residents, farms, and municipalities without obscuring the underlying hydrology.
           </p>
         </div>
         <div class="scenario-context" aria-label="Model architecture">
@@ -53,34 +53,34 @@
           </div>
           <div>
             <dt>Selected date</dt>
-            <dd id="selected-date-value">11 Jul 2026</dd>
+            <dd id="selected-date-value">Loading forecast</dd>
           </div>
           <div>
             <dt>Prediction unit</dt>
-            <dd id="prediction-unit-value">Sub-basin</dd>
+            <dd id="prediction-unit-value">HydroBASINS L8</dd>
           </div>
           <div>
             <dt>Data status</dt>
-            <dd id="data-status-value">Scenario analysis</dd>
+            <dd id="data-status-value">Loading snapshot</dd>
           </div>
         </dl>
       </section>
 
       <section class="workbench" id="application" aria-labelledby="map-title">
         <div class="scenario-banner" role="note">
-          <span class="scenario-badge">Static research scenario</span>
-          <p>Values are generated locally to demonstrate the decision workflow. They are not observations or a live forecast.</p>
+          <span class="scenario-badge" id="live-status-badge">Loading model feed</span>
+          <p id="live-status-text">Loading the latest validated DWD ICON model snapshot.</p>
           <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Check official DWD warnings</a>
         </div>
         <div class="workbench-toolbar">
           <fieldset class="control-group date-group">
-            <legend>Nearby date</legend>
+            <legend>Analysis date</legend>
             <div class="date-controls">
               <button class="icon-button" id="previous-day" type="button" aria-label="Previous day">&larr;</button>
-              <input id="forecast-date" type="date" min="2026-07-08" max="2026-07-17" value="2026-07-11" aria-label="Scenario date" aria-describedby="scenario-date-note">
+              <input id="forecast-date" type="date" aria-label="Forecast analysis date" aria-describedby="scenario-date-note">
               <button class="icon-button" id="next-day" type="button" aria-label="Next day">&rarr;</button>
             </div>
-            <span class="control-note" id="scenario-date-note">8-17 July 2026</span>
+            <span class="control-note" id="scenario-date-note">Loading available dates</span>
           </fieldset>
           <fieldset class="control-group">
             <legend>Spatial level</legend>
@@ -103,7 +103,7 @@
             <div class="control-buttons" role="group" aria-label="Risk layer selection">
               <button class="control-button is-active" type="button" data-layer="impact" aria-pressed="true">Impact</button>
               <button class="control-button" type="button" data-layer="heat" aria-pressed="false">Heat</button>
-              <button class="control-button" type="button" data-layer="drought" aria-pressed="false">Drought</button>
+              <button class="control-button" type="button" data-layer="water" aria-pressed="false">Water stress</button>
             </div>
           </fieldset>
         </div>
@@ -125,15 +125,15 @@
                 </label>
               </div>
             </div>
-            <div id="heat-map" role="region" aria-label="Interactive Germany heat and drought resilience map" aria-describedby="map-status"></div>
-            <p id="map-status" class="map-status" role="status">Loading administrative and hydrological boundaries.</p>
+            <div id="heat-map" role="region" aria-label="Interactive Germany heat and water-stress screening map" aria-describedby="map-status"></div>
+            <p id="map-status" class="map-status" role="status">Loading boundaries and forecast data.</p>
             <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
             <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
             <div class="map-legend" aria-label="Risk score legend">
-              <span><i class="swatch watch"></i>Watch 0-49</span>
-              <span><i class="swatch elevated"></i>Elevated 50-69</span>
-              <span><i class="swatch severe"></i>Severe 70-84</span>
-              <span><i class="swatch extreme"></i>Extreme 85-100</span>
+              <span><i class="swatch watch"></i>Low 0-34</span>
+              <span><i class="swatch elevated"></i>Moderate 35-54</span>
+              <span><i class="swatch severe"></i>High 55-74</span>
+              <span><i class="swatch extreme"></i>Very high 75-100</span>
               <span><i class="swatch unavailable"></i>Insufficient coverage</span>
             </div>
           </section>
@@ -148,13 +148,18 @@
             <div id="signal-list" class="signal-list" aria-label="Risk signals"></div>
             <section class="trend-block" aria-labelledby="trend-title">
               <div class="trend-heading">
-                <h3 id="trend-title">10-day risk profile</h3>
+                <h3 id="trend-title">9-day risk profile</h3>
                 <span id="trend-layer-label">Impact risk</span>
               </div>
               <svg id="risk-trend" viewBox="0 0 360 116" role="img" aria-labelledby="trend-svg-title trend-svg-desc">
-                <title id="trend-svg-title">Selected region scenario risk across nearby dates</title>
+                <title id="trend-svg-title">Selected region screening risk across available dates</title>
                 <desc id="trend-svg-desc">Trend data will appear after a region is loaded.</desc>
               </svg>
+            </section>
+            <section class="official-warning-block" aria-labelledby="official-warning-heading">
+              <p class="section-label" id="official-warning-heading">Official DWD warning context</p>
+              <strong id="official-warning-title">Loading warning feed</strong>
+              <p id="official-warning-detail"></p>
             </section>
             <div class="action-block">
               <div class="action-heading">
@@ -164,10 +169,11 @@
               <ol id="action-list"></ol>
             </div>
             <p class="decision-note" id="decision-note"></p>
-            <dl class="provenance-list" aria-label="Scenario provenance">
-              <div><dt>Model</dt><dd id="model-version">v0.4.0-scenario</dd></div>
-              <div><dt>Forcing</dt><dd>Deterministic synthetic scenario</dd></div>
-              <div><dt>Operational status</dt><dd>Research prototype, not a warning service</dd></div>
+            <dl class="provenance-list" aria-label="Data provenance">
+              <div><dt>Index model</dt><dd id="model-version">v0.5.0-live</dd></div>
+              <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON seamless</dd></div>
+              <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>
+              <div><dt>Operational status</dt><dd id="operational-status">Screening only</dd></div>
             </dl>
           </aside>
         </div>
@@ -184,18 +190,18 @@
           <div class="method-grid">
             <article>
               <span>01</span>
-              <h3>Predict in 614 sub-basins</h3>
-              <p>Synthetic temperature-, thermal-stress-, soil-water-, SPI-, ET-, vegetation-, and low-flow-like proxies are generated for each scenario day.</p>
+              <h3>Screen 614 sub-basins</h3>
+              <p>DWD ICON maximum, minimum and apparent temperature, VPD, precipitation, FAO ET0, and 3-81 cm root-zone soil moisture feed each daily basin index.</p>
             </article>
             <article>
               <span>02</span>
               <h3>Aggregate to 400 local regions</h3>
-              <p>Sub-basin scenarios are weighted by exact EPSG:3035 intersection area into NUTS-3 districts and urban districts, then rolled up to the 16 states.</p>
+              <p>Sub-basin predictions are weighted by exact EPSG:3035 intersection area into NUTS-3 districts and urban districts, then rolled up to the 16 states.</p>
             </article>
             <article>
               <span>03</span>
               <h3>Gate role-specific actions</h3>
-              <p>Synthetic exposure assumptions change the impact lens; all role prompts remain low-regret evidence checks with explicit human verification.</p>
+              <p>Transparent urban/rural sensitivity assumptions shape the impact lens; stale inputs suppress prompts and consequential decisions require human verification.</p>
             </article>
           </div>
         </div>
@@ -218,9 +224,9 @@
               <tbody>
                 <tr>
                   <td><a href="https://www.hydrosheds.org/products/hydrobasins">HydroBASINS Level 8</a></td>
-                  <td>Non-overlapping drought prediction units with upstream/downstream topology</td>
+                  <td>Non-overlapping heat and water-stress prediction units with hydrological topology</td>
                   <td>614 Germany-clipped sub-basins</td>
-                  <td>Bundled geometry; synthetic scenario values</td>
+                  <td>Bundled geometry; live model fields sampled at basin centroids</td>
                 </tr>
                 <tr>
                   <td><a href="https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics">Eurostat GISCO NUTS 2024</a></td>
@@ -229,30 +235,30 @@
                   <td>Bundled 1:1M geometry and exact overlap weights</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.dwd.de/EN/ourservices/cdc/cdc_ueberblick-klimadaten_en.html">DWD Open Data</a></td>
-                  <td>Observed and forecast temperature, humidity, wind, radiation, and official warnings</td>
-                  <td>Hourly forcing and short-horizon validation</td>
-                  <td>Planned; official warning link only</td>
+                  <td><a href="https://open-meteo.com/en/docs/dwd-api">Open-Meteo DWD ICON API</a> / <a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html">DWD warnings</a></td>
+                  <td>Temperature, apparent temperature, VPD, precipitation, ET0, soil moisture, and official warning context</td>
+                  <td>Two retrospective and seven forecast days; current DWD warning feed</td>
+                  <td>Integrated; scheduled refresh every three hours</td>
                 </tr>
                 <tr>
                   <td><a href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-timeseries?tab=download">ERA5-Land</a> / <a href="https://cds.climate.copernicus.eu/datasets/derived-utci-historical?tab=overview">ERA5-HEAT</a></td>
                   <td>Root-zone soil water, evaporation, transpiration, potential evaporation, and UTCI</td>
-                  <td>Historical baseline and gap filling</td>
-                  <td>Planned data pipeline</td>
+                  <td>Historical baseline, bias checks, and future calibration</td>
+                  <td>Next calibration layer; not used in the current score</td>
                 </tr>
                 <tr>
                   <td><a href="https://drought.emergency.copernicus.eu/tumbo/edo/map/">Copernicus EDO</a></td>
                   <td>SPI, soil-moisture anomaly, FAPAR anomaly, and Combined Drought Indicator</td>
-                  <td>Ten-day drought consistency check</td>
-                  <td>Planned data pipeline</td>
+                  <td>Drought anomaly and vegetation-response validation</td>
+                  <td>Next validation layer; not used in the current score</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="source-note">
-            This portfolio build uses deterministic scenario forcing to exercise the complete spatial workflow. It is not a live warning service or agronomic instruction.
+            This build uses live DWD ICON model fields through Open-Meteo and a separately displayed official DWD warning snapshot. Its 0-100 values are uncalibrated screening indices, not probabilities, observations, official warnings, or agronomic instructions.
             HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO).
-            Background map and place labels: &copy; OpenStreetMap contributors.
+            Weather data: Open-Meteo (CC BY 4.0) using DWD ICON. Background map and place labels: &copy; OpenStreetMap contributors.
           </p>
         </div>
       </section>
@@ -263,7 +269,7 @@
       <a href="./index.html">Back to portfolio</a>
     </footer>
 
-    <noscript><p class="noscript-note">HeatLens requires JavaScript to calculate and render the scenario map.</p></noscript>
+    <noscript><p class="noscript-note">HeatLens requires JavaScript to validate, calculate, and render the forecast map.</p></noscript>
     <script src="./vendor/d3.min.js"></script>
     <script src="./vendor/leaflet.js"></script>
     <script type="module" src="./heatwave-demo.js"></script>

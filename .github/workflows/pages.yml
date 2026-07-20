@@ -1,9 +1,11 @@
-name: Deploy portfolio to GitHub Pages
+name: Refresh and deploy portfolio
 
 on:
   push:
     branches:
       - main
+  schedule:
+    - cron: "17 */3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -16,8 +18,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      publish: ${{ steps.publish-decision.outputs.publish }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,27 +32,42 @@ jobs:
         with:
           node-version: 22
 
-      - name: Run model, spatial and page-contract tests
+      - name: Refresh DWD ICON and DWD warning snapshot
+        id: refresh
+        continue-on-error: true
+        run: npm run refresh-data
+
+      - name: Run model, live-data, spatial and page-contract tests
         run: npm test
 
+      - name: Decide whether to publish
+        id: publish-decision
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" != "schedule" || "${{ steps.refresh.outcome }}" == "success" ]]; then
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure Pages
+        if: steps.publish-decision.outputs.publish == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        if: steps.publish-decision.outputs.publish == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
   deploy:
-    needs: test
+    needs: build
+    if: needs.build.outputs.publish == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: .
-
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5

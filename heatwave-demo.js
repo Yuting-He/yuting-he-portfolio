@@ -1,26 +1,22 @@
 import {
-  ANALYSIS_DATE,
   AUDIENCES,
   LAYERS,
-  MAX_DATE,
-  MIN_DATE,
   MODEL_VERSION,
-  SCENARIO_GENERATED_AT,
   actionsFor,
   aggregatePredictions,
-  buildBasinPrediction,
-  dataStatus,
-  dateRange,
+  buildLiveBasinPrediction,
   fillColor,
+  freshnessStatus,
   scoreForLayer,
   severity
 } from "./heatwave-model.js";
-import { DEFAULT_VIEW, parseViewState, serializeViewState } from "./heatwave-state.js";
+import { DEFAULT_VIEW, parseViewState, resolveForecastDate, serializeViewState } from "./heatwave-state.js";
 
 const STATE_URL = "./assets/nuts1-de.geojson";
 const DISTRICT_URL = "./assets/nuts3-de.geojson";
 const BASIN_URL = "./assets/hydrobasins-de-level8.geojson";
 const CROSSWALK_URL = "./assets/basin-nuts3-crosswalk.json";
+const LIVE_DATA_URL = "./assets/live/forecast.json";
 const SVG_NS = "http://www.w3.org/2000/svg";
 const initialView = parseViewState(window.location.search);
 
@@ -39,6 +35,10 @@ const state = {
   districtProfile: new Map(),
   stateProfile: new Map(),
   crosswalk: [],
+  liveData: null,
+  liveByBasin: new Map(),
+  availableDates: [],
+  freshness: { label: "Unavailable", className: "unavailable", ageHours: null, stale: true },
   predictionCache: new Map(),
   metricCache: new Map(),
   d3: null,
@@ -83,25 +83,24 @@ const elements = {
   modelVersion: document.querySelector("#model-version")
 };
 elements.trendDescription = document.querySelector("#trend-svg-desc");
+elements.trendTitle = document.querySelector("#trend-title");
+elements.dateNote = document.querySelector("#scenario-date-note");
+elements.liveStatusBadge = document.querySelector("#live-status-badge");
+elements.liveStatusText = document.querySelector("#live-status-text");
+elements.officialWarningTitle = document.querySelector("#official-warning-title");
+elements.officialWarningDetail = document.querySelector("#official-warning-detail");
+elements.forcingSource = document.querySelector("#forcing-source");
+elements.sourceUpdated = document.querySelector("#source-updated");
+elements.operationalStatus = document.querySelector("#operational-status");
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
-function hashString(value) {
-  let hash = 0;
-  for (let index = 0; index < String(value).length; index += 1) {
-    hash = Math.imul(31, hash) + String(value).charCodeAt(index) | 0;
-  }
-  return Math.abs(hash);
-}
-
 function profileForDistrict(feature) {
-  const id = feature.properties.NUTS_ID;
   const name = String(feature.properties.NAME_LATN || feature.properties.NUTS_NAME || "");
   const city = /Kreisfreie Stadt|Stadtkreis|Berlin|Hamburg|Bremen/i.test(name);
-  const fingerprint = hashString(id) % 23;
   return {
-    exposure: clamp(38 + fingerprint + (city ? 27 : 0), 28, 94),
-    cropSensitivity: clamp(72 - fingerprint * 0.7 - (city ? 38 : 0), 20, 82)
+    exposure: city ? 70 : 50,
+    cropSensitivity: city ? 25 : 65
   };
 }
 
@@ -120,10 +119,43 @@ function formatDate(date) {
     .format(new Date(`${date}T00:00:00Z`));
 }
 
-function shiftDate(date, days) {
-  const value = new Date(`${date}T00:00:00Z`);
-  value.setUTCDate(value.getUTCDate() + days);
-  return value.toISOString().slice(0, 10);
+function formatTimestamp(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "unavailable";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin", timeZoneName: "short"
+  }).format(date);
+}
+
+function freshnessText() {
+  if (!Number.isFinite(state.freshness.ageHours)) return "source time unavailable";
+  if (state.freshness.ageHours < 1) return "updated less than 1 hour ago";
+  return `updated ${Math.floor(state.freshness.ageHours)} hours ago`;
+}
+
+function validateLivePayload(payload, basinFeatures) {
+  if (payload?.schema !== "heatlens-live/v1") throw new Error("Live forecast schema unavailable");
+  const dates = payload.forecast?.dates;
+  if (!Array.isArray(dates) || !dates.length || dates.some((date, index) => !/^\d{4}-\d{2}-\d{2}$/.test(date) || index && date <= dates[index - 1])) {
+    throw new Error("Live forecast date window is invalid");
+  }
+  if (!Array.isArray(payload.basins) || payload.basins.length !== basinFeatures.length) {
+    throw new Error("Live forecast basin coverage is incomplete");
+  }
+  const geometryIds = new Set(basinFeatures.map((feature) => String(feature.properties.HYBAS_ID)));
+  const payloadIds = new Set();
+  for (const basin of payload.basins) {
+    const basinId = String(basin.id);
+    if (payloadIds.has(basinId)) throw new Error(`Duplicate live forecast basin ${basinId}`);
+    payloadIds.add(basinId);
+    if (!geometryIds.has(basinId) || basin.days?.map((day) => day.date).join() !== dates.join()) {
+      throw new Error(`Live forecast does not align with basin ${basin.id}`);
+    }
+    if (basin.days.some((day) => day.completeness < 85)) {
+      throw new Error(`Live forecast is incomplete for basin ${basin.id}`);
+    }
+  }
+  return payload;
 }
 
 function addToMap(map, key, value) {
@@ -204,11 +236,8 @@ function predictionsForDate(date) {
   const predictions = new Map();
   state.basinFeatures.forEach((feature) => {
     const id = featureId(feature, "basin");
-    predictions.set(id, buildBasinPrediction({
-      id,
-      centroid: feature.__centroid,
-      properties: feature.properties
-    }, date));
+    const day = state.liveByBasin.get(id)?.get(date);
+    if (day) predictions.set(id, buildLiveBasinPrediction({ id, properties: feature.properties }, day));
   });
   state.predictionCache.set(date, predictions);
   return predictions;
@@ -227,16 +256,17 @@ function weightedPredictionsForUnit(level, id, date) {
     return prediction ? [prediction] : [];
   }
   const records = level === "state" ? state.overlapsByState.get(id) : state.overlapsByDistrict.get(id);
-  return (records || []).map((record) => ({
-    ...predictionMap.get(String(record.HYBAS_ID)),
-    area: record.overlap_km2
-  }));
+  return (records || []).flatMap((record) => {
+    const prediction = predictionMap.get(String(record.HYBAS_ID));
+    return prediction ? [{ ...prediction, area: record.overlap_km2 }] : [];
+  });
 }
 
 function metricsForUnit(level, id, date = state.date) {
   const cacheKey = `${date}|${state.audience}|${level}|${id}`;
   if (state.metricCache.has(cacheKey)) return state.metricCache.get(cacheKey);
   const predictions = weightedPredictionsForUnit(level, id, date);
+  if (!predictions.length) throw new Error(`No live prediction values for ${level} ${id} on ${date}`);
   const profile = profileForUnit(level, id);
   const metrics = aggregatePredictions(predictions, {
     audience: state.audience,
@@ -252,11 +282,11 @@ function metricsForUnit(level, id, date = state.date) {
     const targetArea = [...districtAreas.values()].reduce((sum, area) => sum + area, 0);
     metrics.spatialCoverage = Math.round(clamp(overlapArea / targetArea * 100, 0, 100));
   }
-  metrics.available = metrics.spatialCoverage >= 50;
+  metrics.available = metrics.spatialCoverage >= 50 && metrics.completeness >= 85;
   if (!metrics.available) {
     metrics.impactScore = Number.NaN;
     metrics.heatScore = Number.NaN;
-    metrics.droughtScore = Number.NaN;
+    metrics.waterStressScore = Number.NaN;
   }
   state.metricCache.set(cacheKey, metrics);
   return metrics;
@@ -357,16 +387,28 @@ function renderControls() {
     button.setAttribute("aria-pressed", String(active));
   });
   elements.dateInput.value = state.date;
-  elements.previousDay.disabled = state.date <= MIN_DATE;
-  elements.nextDay.disabled = state.date >= MAX_DATE;
+  elements.dateInput.min = state.availableDates[0];
+  elements.dateInput.max = state.availableDates.at(-1);
+  const dateIndex = state.availableDates.indexOf(state.date);
+  elements.previousDay.disabled = dateIndex <= 0;
+  elements.nextDay.disabled = dateIndex < 0 || dateIndex >= state.availableDates.length - 1;
+  elements.dateNote.textContent = `${formatDate(state.availableDates[0])} - ${formatDate(state.availableDates.at(-1))}`;
 }
 
 function renderSummary() {
   elements.coverage.textContent = `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
   elements.selectedDateValue.textContent = formatDate(state.date);
-  elements.predictionUnit.textContent = "HydroBASINS L8";
-  elements.dataStatus.textContent = dataStatus(state.date);
+  elements.predictionUnit.textContent = "HydroBASINS L8 / ICON";
+  elements.dataStatus.textContent = `${state.freshness.label} - ${freshnessText()}`;
   elements.modelVersion.textContent = `v${MODEL_VERSION}`;
+  elements.liveStatusBadge.textContent = `${state.freshness.label} model feed`;
+  elements.liveStatusBadge.className = `scenario-badge ${state.freshness.className}`;
+  elements.liveStatusText.textContent = state.freshness.stale
+    ? "The last valid forecast snapshot is older than 36 hours. Scores remain visible for audit, but suggested actions are suppressed."
+    : `DWD ICON weather fields were refreshed ${freshnessText()}. HeatLens scores are custom screening indices, not official warnings.`;
+  elements.forcingSource.textContent = `${state.liveData.forecast.sourceModel} via Open-Meteo`;
+  elements.sourceUpdated.textContent = formatTimestamp(state.liveData.generatedAt);
+  elements.operationalStatus.textContent = state.freshness.stale ? "Stale snapshot - actions suppressed" : "Live model data - screening only";
 }
 
 function updateRegionSelect(features) {
@@ -560,7 +602,7 @@ function appendSignal(label, value) {
 }
 
 function renderTrend(unit) {
-  const dates = dateRange();
+  const dates = state.availableDates;
   const values = dates.map((date) => scoreForLayer(metricsForUnit(unit.level, unit.id, date), state.layer));
   const width = 360;
   const height = 116;
@@ -576,7 +618,7 @@ function renderTrend(unit) {
     return;
   }
 
-  [50, 70, 85].forEach((value) => {
+  [35, 55, 75].forEach((value) => {
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("x1", padding.left);
     line.setAttribute("x2", width - padding.right);
@@ -614,10 +656,37 @@ function renderTrend(unit) {
   });
   elements.trend.replaceChildren(...nodes);
   elements.trendLayer.textContent = LAYERS[state.layer];
+  elements.trendTitle.textContent = `${dates.length}-day risk profile`;
   const peak = Math.max(...values);
   const peakIndex = values.indexOf(peak);
   const currentIndex = dates.indexOf(state.date);
   elements.trendDescription.textContent = `${LAYERS[state.layer]} ranges from ${Math.min(...values)} to ${peak}. Peak ${peak} on ${formatDate(dates[peakIndex])}; selected date ${formatDate(state.date)} is ${values[currentIndex]}.`;
+}
+
+function stateIdForUnit(unit) {
+  if (unit.level === "state") return unit.id;
+  if (unit.level === "district") return unit.id.slice(0, 3);
+  return unit.feature.__stateId || state.selectedState;
+}
+
+function renderOfficialWarning(unit) {
+  const warningFeed = state.liveData.warnings;
+  const stateId = stateIdForUnit(unit);
+  const regionWarnings = warningFeed.states?.[stateId];
+  if (warningFeed.status !== "available") {
+    elements.officialWarningTitle.textContent = "DWD warning feed unavailable";
+    elements.officialWarningDetail.textContent = "Open the official DWD service before making a protective decision.";
+    return;
+  }
+  const heatWarnings = (regionWarnings?.warnings || []).filter((warning) => warning.isHeat);
+  if (heatWarnings.length) {
+    elements.officialWarningTitle.textContent = heatWarnings[0].event || "Active DWD heat warning";
+    elements.officialWarningDetail.textContent = `${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}. Feed issued ${formatTimestamp(warningFeed.issuedAt)}.`;
+    return;
+  }
+  const otherCount = regionWarnings?.warningCount || 0;
+  elements.officialWarningTitle.textContent = "No DWD heat warning in this snapshot";
+  elements.officialWarningDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)}${otherCount ? `; ${otherCount} other weather warning${otherCount === 1 ? " is" : "s are"} active in this state` : ""}. This is current-feed context, not an all-clear for the selected forecast date.`;
 }
 
 function renderDetails() {
@@ -631,46 +700,55 @@ function renderDetails() {
   elements.regionTitle.textContent = featureName(unit.feature, unit.level);
   elements.riskLevel.textContent = `${level.label} ${score}`;
   elements.riskLevel.className = `risk-level ${level.className}`;
+  renderOfficialWarning(unit);
   if (!metrics.available) {
     elements.riskLevel.textContent = "Unavailable";
-    elements.regionSummary.textContent = `${formatDate(state.date)} has no score because the exact basin overlay covers only ${metrics.spatialCoverage}% of this region.`;
+    const coverageReason = metrics.spatialCoverage < 50
+      ? `the exact basin overlay covers only ${metrics.spatialCoverage}% of this region`
+      : `source completeness is only ${metrics.completeness}%`;
+    elements.regionSummary.textContent = `${formatDate(state.date)} has no score because ${coverageReason}.`;
     elements.signalList.replaceChildren(
       appendSignal("Spatial coverage", `${metrics.spatialCoverage}% exact overlap`),
+      appendSignal("Source completeness", `${metrics.completeness}%`),
       appendSignal("Status", "Risk and action outputs suppressed"),
       appendSignal("Official source", "Use DWD and the responsible local authority")
     );
     elements.actionList.replaceChildren();
-    elements.confidence.textContent = "Insufficient coverage";
-    elements.decisionNote.textContent = "HeatLens fails closed when spatial coverage is below 50%; it does not substitute nearby basin values.";
+    elements.confidence.textContent = "Insufficient input coverage";
+    elements.decisionNote.textContent = "HeatLens fails closed below 50% spatial coverage or 85% source completeness; it does not substitute nearby values.";
     renderTrend(unit);
     return;
   }
   const guidance = actionsFor(metrics, state.audience);
-  elements.regionSummary.textContent = `${AUDIENCES[state.audience]} scenario estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
+  elements.regionSummary.textContent = `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
   elements.signalList.replaceChildren(
-    appendSignal("Heat proxies", `Tmax-like ${metrics.tmaxProxy} | UTCI-like ${metrics.utciProxy} | persistence ${metrics.persistenceProxy}`),
-    appendSignal("Drought proxies", `soil-water rank ${metrics.soilWaterProxy}/100 | SPI-like ${metrics.spi3Proxy} | ET-deficit-like ${metrics.etDeficitProxy}`),
-    appendSignal("Hydrology proxies", `flow rank ${metrics.flowProxy}/100 | vegetation ${metrics.faparProxy} | VPD-like ${metrics.vpdProxy}`),
-    appendSignal("Model", `${metrics.consistencyProxy}/100 scenario consistency | ${metrics.basinCount} basins | ${metrics.spatialCoverage}% spatial coverage`),
-    appendSignal("Assumptions", `synthetic exposure ${metrics.exposure}/100 | crop sensitivity ${metrics.cropSensitivity}/100`)
+    appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
+    appendSignal("Atmospheric demand", `VPD max ${metrics.vpdMaxKpa} kPa | FAO ET0 ${metrics.et0Mm} mm/day`),
+    appendSignal("Water context", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm`),
+    appendSignal("Persistence", `heat ${metrics.heatPersistenceDays} day${metrics.heatPersistenceDays === 1 ? "" : "s"} | dry ${metrics.dryPersistenceDays} day${metrics.dryPersistenceDays === 1 ? "" : "s"}`),
+    appendSignal("Data quality", `${metrics.completeness}% source completeness | ${metrics.spatialCoverage}% exact spatial overlap`),
+    appendSignal("Impact assumptions", `urban/rural exposure ${metrics.exposure}/100 | crop sensitivity ${metrics.cropSensitivity}/100`)
   );
-  elements.actionList.replaceChildren(...guidance.actions.map((action) => {
+  const actions = state.freshness.stale ? [] : guidance.actions;
+  elements.actionList.replaceChildren(...actions.map((action) => {
     const item = document.createElement("li");
     item.textContent = action;
     return item;
   }));
-  elements.confidence.textContent = `${metrics.consistencyProxy}/100 scenario consistency proxy`;
-  elements.decisionNote.textContent = guidance.note;
+  elements.confidence.textContent = `${metrics.completeness}% source completeness`;
+  elements.decisionNote.textContent = state.freshness.stale
+    ? "Suggested actions are suppressed because the last valid source snapshot is stale. Check DWD and local official channels."
+    : guidance.note;
   renderTrend(unit);
 }
 
 function renderResolutionNote() {
   if (state.level === "basin") {
-    elements.resolutionNote.textContent = "Sub-basin polygons are the model units. Click one to inspect its daily heat, soil-water, SPI-3, ET, vegetation, and low-flow signals.";
+    elements.resolutionNote.textContent = "Sub-basin polygons are the prediction units. Each unit samples the DWD ICON grid at its centroid and combines daily heat, atmospheric-demand, soil-water, and water-balance fields.";
   } else if (state.level === "district") {
-    elements.resolutionNote.textContent = "District indices use official GISCO 2024 NUTS-3 1:1M boundaries and exact HydroBASINS Level 8 overlap areas in EPSG:3035. This layer represents Kreise and kreisfreie Stadte, not every municipality.";
+    elements.resolutionNote.textContent = "District indices use GISCO 2024 NUTS-3 1:1M boundaries and exact HydroBASINS Level 8 overlap areas in EPSG:3035. This represents Kreise and kreisfreie Stadte, not every municipality.";
   } else {
-    elements.resolutionNote.textContent = "State indices aggregate the same exact basin-district overlap weights used by local views; the state layer is an overview, not the prediction resolution.";
+    elements.resolutionNote.textContent = "State indices aggregate the same live sub-basin values and exact basin-district overlap weights used by local views; the state layer is an overview, not the prediction resolution.";
   }
 }
 
@@ -700,6 +778,9 @@ function resetSpatialState() {
     state.predictionCache, state.metricCache]
     .forEach((map) => map.clear());
   state.crosswalk = [];
+  state.liveData = null;
+  state.liveByBasin.clear();
+  state.availableDates = [];
 }
 
 function setLoading(loading) {
@@ -709,7 +790,7 @@ function setLoading(loading) {
     if (control !== elements.retryLoad) control.disabled = loading;
   });
   if (loading) {
-    elements.mapStatus.textContent = "Loading administrative and hydrological boundaries.";
+    elements.mapStatus.textContent = "Loading boundaries and the latest validated forecast snapshot.";
     elements.riskLevel.textContent = "Loading";
   }
 }
@@ -721,11 +802,12 @@ async function loadApplication() {
   elements.mapStatus.setAttribute("role", "status");
   try {
     initializeMap();
-    const [states, districts, basins, crosswalk] = await Promise.all([
+    const [states, districts, basins, crosswalk, livePayload] = await Promise.all([
       fetch(STATE_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("State boundaries unavailable"))),
       fetch(DISTRICT_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("District boundaries unavailable"))),
       fetch(BASIN_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Basin boundaries unavailable"))),
-      fetch(CROSSWALK_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Spatial crosswalk unavailable")))
+      fetch(CROSSWALK_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Spatial crosswalk unavailable"))),
+      fetch(LIVE_DATA_URL, { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject(new Error("Live forecast snapshot unavailable")))
     ]);
     const d3 = globalThis.d3;
     if (!d3?.geoCentroid) throw new Error("Bundled D3 geography library unavailable");
@@ -733,6 +815,14 @@ async function loadApplication() {
     state.districtFeatures = districts.features;
     state.basinFeatures = basins.features;
     state.crosswalk = crosswalk;
+    state.liveData = validateLivePayload(livePayload, state.basinFeatures);
+    state.availableDates = [...state.liveData.forecast.dates];
+    const currentForecastDate = state.availableDates[Math.min(state.liveData.forecast.pastDays || 0, state.availableDates.length - 1)];
+    state.date = resolveForecastDate(state.date, state.availableDates, currentForecastDate);
+    state.freshness = freshnessStatus(state.liveData.generatedAt);
+    state.liveData.basins.forEach((basin) => {
+      state.liveByBasin.set(String(basin.id), new Map(basin.days.map((day) => [day.date, day])));
+    });
     state.d3 = d3;
     assignSpatialHierarchy();
     validateSelection();
@@ -749,8 +839,8 @@ async function loadApplication() {
     elements.signalList.replaceChildren();
     elements.actionList.replaceChildren();
     elements.trend.replaceChildren();
-    elements.regionSummary.textContent = "Map data unavailable.";
-    elements.mapStatus.textContent = "The map could not be loaded. Check the connection or local server, then retry.";
+    elements.regionSummary.textContent = "Validated map or forecast data unavailable.";
+    elements.mapStatus.textContent = "HeatLens could not load a complete validated snapshot. Check the connection or local server, then retry.";
     elements.mapStatus.setAttribute("role", "alert");
     elements.riskLevel.textContent = "Unavailable";
     elements.retryLoad.hidden = false;
@@ -767,9 +857,17 @@ function currentSnapshot() {
   const metrics = metricsForUnit(unit.level, unit.id);
   const score = scoreForLayer(metrics, state.layer);
   return {
-    schema: "heatlens-scenario-snapshot/v1",
+    schema: "heatlens-live-snapshot/v1",
     exportedAt: new Date().toISOString(),
-    model: { version: MODEL_VERSION, generatedAt: SCENARIO_GENERATED_AT, operational: false },
+    model: {
+      version: MODEL_VERSION,
+      generatedAt: state.liveData.generatedAt,
+      provider: state.liveData.forecast.provider,
+      sourceModel: state.liveData.forecast.sourceModel,
+      operationalData: true,
+      calibratedWarningService: false,
+      freshness: state.freshness.label
+    },
     view: {
       date: state.date,
       spatialLevel: state.level,
@@ -778,7 +876,8 @@ function currentSnapshot() {
     },
     region: { id: unit.id, name: featureName(unit.feature, unit.level), level: unit.level },
     risk: { score, severity: severity(score).label, metrics },
-    boundary: "Deterministic research scenario; not a live warning, clinical tool, or agronomic instruction."
+    officialWarnings: state.liveData.warnings,
+    boundary: "Live model inputs with an uncalibrated screening index; not an official warning, clinical tool, or agronomic instruction."
   };
 }
 
@@ -808,7 +907,7 @@ function exportSnapshot() {
   link.download = `heatlens-${snapshot.region.id}-${state.date}.json`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(link.href), 0);
-  setViewFeedback("Scenario snapshot exported as JSON.");
+  setViewFeedback("Live forecast snapshot exported as JSON.");
 }
 
 document.querySelectorAll("[data-level]").forEach((button) => {
@@ -840,22 +939,24 @@ document.querySelectorAll("[data-layer]").forEach((button) => {
 });
 
 elements.dateInput.addEventListener("change", () => {
-  if (elements.dateInput.value >= MIN_DATE && elements.dateInput.value <= MAX_DATE) {
+  if (state.availableDates.includes(elements.dateInput.value)) {
     state.date = elements.dateInput.value;
     renderAll();
   } else {
     elements.dateInput.value = state.date;
-    setViewFeedback(`Choose a date between ${MIN_DATE} and ${MAX_DATE}.`);
+    setViewFeedback(`Choose an available date between ${state.availableDates[0]} and ${state.availableDates.at(-1)}.`);
   }
 });
 
 elements.previousDay.addEventListener("click", () => {
-  state.date = shiftDate(state.date, -1);
+  const index = state.availableDates.indexOf(state.date);
+  if (index > 0) state.date = state.availableDates[index - 1];
   renderAll();
 });
 
 elements.nextDay.addEventListener("click", () => {
-  state.date = shiftDate(state.date, 1);
+  const index = state.availableDates.indexOf(state.date);
+  if (index >= 0 && index < state.availableDates.length - 1) state.date = state.availableDates[index + 1];
   renderAll();
 });
 
@@ -881,7 +982,11 @@ elements.exportView.addEventListener("click", exportSnapshot);
 
 window.addEventListener("popstate", () => {
   Object.assign(state, parseViewState(window.location.search));
-  if (state.ready) renderAll();
+  if (state.ready) {
+    const currentForecastDate = state.availableDates[Math.min(state.liveData.forecast.pastDays || 0, state.availableDates.length - 1)];
+    state.date = resolveForecastDate(state.date, state.availableDates, currentForecastDate);
+    renderAll();
+  }
 });
 
 loadApplication();
