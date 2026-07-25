@@ -30,6 +30,7 @@ test("published weather values stay within broad physical guardrails", () => {
       assert.ok(day.tminC >= -70 && day.tminC <= 50);
       assert.ok(day.apparentMaxC >= -70 && day.apparentMaxC <= 70);
       assert.ok(day.precipitationMm >= 0 && day.precipitationMm <= 500);
+      assert.ok(day.precipitation1hMaxMm >= 0 && day.precipitation1hMaxMm <= 200);
       assert.ok(day.et0Mm >= 0 && day.et0Mm <= 20);
       assert.ok(day.vpdMaxKpa >= 0 && day.vpdMaxKpa <= 12);
       assert.ok(day.soilMoistureM3M3 >= 0 && day.soilMoistureM3M3 <= 0.8);
@@ -62,7 +63,7 @@ test("every district and state aggregates to finite live scores on every date", 
           ...predictions.get(String(record.HYBAS_ID)),
           area: record.overlap_km2
         })));
-        for (const score of [metrics.heatScore, metrics.waterStressScore, metrics.impactScore]) {
+        for (const score of [metrics.heatScore, metrics.dryStressScore, metrics.wetStressScore, metrics.impactScore]) {
           assert.ok(Number.isFinite(score) && score >= 0 && score <= 100);
         }
       }
@@ -75,6 +76,7 @@ test("hourly VPD and root-zone soil moisture are summarized without invented fie
     hourly: {
       time: ["2026-07-20T00:00", "2026-07-20T12:00"],
       vapour_pressure_deficit: [0.4, 2.1],
+      precipitation: [0.2, 6.4],
       soil_moisture_3_to_9cm: [0.18, 0.2],
       soil_moisture_9_to_27cm: [0.22, 0.24],
       soil_moisture_27_to_81cm: [0.26, 0.28]
@@ -90,6 +92,7 @@ test("hourly VPD and root-zone soil moisture are summarized without invented fie
   };
   const [day] = summarizeForecastResponse(response);
   assert.equal(day.vpdMaxKpa, 2.1);
+  assert.equal(day.precipitation1hMaxMm, 6.4);
   assert.equal(day.soilMoistureM3M3, 0.255);
   assert.equal(day.waterBalance3dMm, -5);
   assert.equal(day.completeness, 100);
@@ -110,12 +113,24 @@ test("DWD JSONP is parsed and heat alerts stay separate by state", () => {
         regionName: "Test region",
         event: "HITZE",
         headline: "Test heat warning"
+      }, {
+        stateShort: "BY",
+        state: "Bayern",
+        type: 2,
+        level: 3,
+        start: Date.parse("2026-07-20T12:00:00Z"),
+        end: Date.parse("2026-07-20T20:00:00Z"),
+        regionName: "Test region",
+        event: "HEFTIGER STARKREGEN",
+        headline: "Test heavy rain warning"
       }]
     }
   };
   const parsed = parseDwdWarnings(`warnWetter.loadWarnings(${JSON.stringify(payload)});`);
   assert.equal(parsed.states.DE2.heatWarningCount, 1);
-  assert.equal(parsed.states.DE2.warnings[0].isHeat, true);
+  assert.equal(parsed.states.DE2.rainWarningCount, 1);
+  assert.ok(parsed.states.DE2.warnings.some((warning) => warning.isHeat));
+  assert.ok(parsed.states.DE2.warnings.some((warning) => warning.isRain));
 });
 
 test("geometry centroid is stable for a simple polygon", () => {

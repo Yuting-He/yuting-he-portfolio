@@ -21,3 +21,11 @@ The processed files, exact-intersection method, source URLs, and checksums are r
 - Official warning context: Deutscher Wetterdienst warning JSONP feed. Source description and reuse guidance: <https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html>.
 
 Weather and warning records in `assets/live/forecast.json` retain their source terms and are not relicensed under the project's MIT License.
+
+## Linked authority and reference services
+
+The interface links to, but does not copy or blend, these authoritative or scientific services:
+
+- DWD soil-moisture products: <https://www.dwd.de/bodenfeuchteviewer>
+- UFZ Dürremonitor Deutschland: <https://www.ufz.de/index.php?de=37937&m=0>
+- German state flood portals: <https://www.hochwasserzentralen.de/>

@@ -26,7 +26,12 @@ test("interactive page uses bundled map libraries, OSM tiles, and exposes live-d
   assert.match(html, /DWD ICON/);
   assert.match(html, /official DWD warning/i);
   assert.match(html, /Check official DWD warnings/);
-  assert.match(html, /data-layer="water"/);
+  assert.match(html, /data-layer="dry"/);
+  assert.match(html, /data-layer="wet"/);
+  assert.match(html, /hoch Wasser zentralen|hochwasserzentralen/i);
+  assert.match(html, /UFZ soil-water monitor/i);
+  assert.match(html, /HeatLens supports decisions; it does not reissue warnings/i);
+  assert.doesNotMatch(html, /data-layer="water"/);
   assert.doesNotMatch(html, /data-layer="drought"/);
 });
 

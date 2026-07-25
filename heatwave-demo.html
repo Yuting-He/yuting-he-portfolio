@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="HeatLens Germany: live DWD ICON heat and water-stress screening across German sub-basins, districts, and states.">
+    <meta name="description" content="HeatLens Germany translates official warning context and live basin heat, dry, and excess-water signals into role-specific low-regret actions.">
     <meta name="theme-color" content="#081a23">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: https://tile.openstreetmap.org; object-src 'none'; base-uri 'self'; form-action 'self'">
     <link rel="icon" href="data:,">
     <link rel="canonical" href="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
-    <meta property="og:title" content="HeatLens Germany | Live Heat and Water-Stress Screening">
-    <meta property="og:description" content="An open GIS application connecting live DWD ICON model fields and official DWD warning context to German sub-basin, district, and state views.">
+    <meta property="og:title" content="HeatLens Germany | Multi-Hazard Decision Translation">
+    <meta property="og:description" content="An open GIS application translating official warning context and live heat, dry, and excess-water signals into role-specific low-regret actions.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html">
-    <title>HeatLens Germany | Live Heat and Water-Stress Screening</title>
+    <title>HeatLens Germany | Multi-Hazard Decision Translation</title>
     <link rel="stylesheet" href="./vendor/leaflet.css">
     <link rel="stylesheet" href="./heatwave-demo.css">
   </head>
@@ -31,17 +31,17 @@
     <main>
       <section class="demo-intro" aria-labelledby="demo-title">
         <div>
-          <p class="kicker">Germany-wide heat and water-stress intelligence</p>
+          <p class="kicker">From hazard signal to role-specific action</p>
           <h1 id="demo-title">HeatLens Germany</h1>
           <p>
-            Live DWD ICON model fields are translated into sub-basin screening indices, then aggregated to state and
-            district views for residents, farms, and municipalities without obscuring the underlying hydrology.
+            Official warning context and live basin heat, dry, and excess-water signals are translated into staged,
+            low-regret checks for residents, farms, and municipalities. HeatLens supports decisions; it does not reissue warnings.
           </p>
         </div>
         <div class="scenario-context" aria-label="Model architecture">
-          <span class="context-label">Model architecture</span>
-          <strong>Predict by basin, act by place</strong>
-          <span>HydroBASINS Level 8 feeds NUTS-3 and state-level impact aggregation.</span>
+          <span class="context-label">Decision architecture</span>
+          <strong>Authority, screening, action</strong>
+          <span>DWD and state services remain authoritative; basin signals explain where and why to verify.</span>
         </div>
       </section>
 
@@ -103,7 +103,8 @@
             <div class="control-buttons" role="group" aria-label="Risk layer selection">
               <button class="control-button is-active" type="button" data-layer="impact" aria-pressed="true">Impact</button>
               <button class="control-button" type="button" data-layer="heat" aria-pressed="false">Heat</button>
-              <button class="control-button" type="button" data-layer="water" aria-pressed="false">Water stress</button>
+              <button class="control-button" type="button" data-layer="dry" aria-pressed="false">Dry stress</button>
+              <button class="control-button" type="button" data-layer="wet" aria-pressed="false">Excess water</button>
             </div>
           </fieldset>
         </div>
@@ -125,7 +126,7 @@
                 </label>
               </div>
             </div>
-            <div id="heat-map" role="region" aria-label="Interactive Germany heat and water-stress screening map" aria-describedby="map-status"></div>
+            <div id="heat-map" role="region" aria-label="Interactive Germany heat, dry, and excess-water screening map" aria-describedby="map-status"></div>
             <p id="map-status" class="map-status" role="status">Loading boundaries and forecast data.</p>
             <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
             <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
@@ -157,9 +158,26 @@
               </svg>
             </section>
             <section class="official-warning-block" aria-labelledby="official-warning-heading">
-              <p class="section-label" id="official-warning-heading">Official DWD warning context</p>
-              <strong id="official-warning-title">Loading warning feed</strong>
-              <p id="official-warning-detail"></p>
+              <p class="section-label" id="official-warning-heading">Authoritative context</p>
+              <div class="official-warning-row">
+                <span>Heat</span>
+                <div>
+                  <strong id="official-heat-title">Loading DWD warning feed</strong>
+                  <p id="official-heat-detail"></p>
+                </div>
+              </div>
+              <div class="official-warning-row">
+                <span>Rain</span>
+                <div>
+                  <strong id="official-rain-title">Loading DWD warning feed</strong>
+                  <p id="official-rain-detail"></p>
+                </div>
+              </div>
+              <div class="authority-links">
+                <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">DWD warnings</a>
+                <a href="https://www.hochwasserzentralen.de/" target="_blank" rel="noopener noreferrer">State flood portals</a>
+                <a href="https://www.ufz.de/index.php?de=37937&m=0" target="_blank" rel="noopener noreferrer">UFZ soil-water monitor</a>
+              </div>
             </section>
             <div class="action-block">
               <div class="action-heading">
@@ -170,7 +188,7 @@
             </div>
             <p class="decision-note" id="decision-note"></p>
             <dl class="provenance-list" aria-label="Data provenance">
-              <div><dt>Index model</dt><dd id="model-version">v0.5.0-live</dd></div>
+              <div><dt>Index model</dt><dd id="model-version">v0.6.0-decision</dd></div>
               <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON seamless</dd></div>
               <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>
               <div><dt>Operational status</dt><dd id="operational-status">Screening only</dd></div>
@@ -185,13 +203,13 @@
 
       <section id="method" class="content-band" aria-labelledby="method-title">
         <div class="content-inner">
-          <p class="kicker">Spatial decision model</p>
-          <h2 id="method-title">One hydrological model, three decision scales.</h2>
+          <p class="kicker">Decision translation model</p>
+          <h2 id="method-title">Official signals stay official; local context makes them actionable.</h2>
           <div class="method-grid">
             <article>
               <span>01</span>
-              <h3>Screen 614 sub-basins</h3>
-              <p>DWD ICON maximum, minimum and apparent temperature, VPD, precipitation, FAO ET0, and 3-81 cm root-zone soil moisture feed each daily basin index.</p>
+              <h3>Screen both sides of water stress</h3>
+              <p>DWD ICON heat, atmospheric demand, root-zone moisture, daily water balance, and hourly rain intensity feed separate dry and excess-water indices for 614 sub-basins.</p>
             </article>
             <article>
               <span>02</span>
@@ -200,8 +218,8 @@
             </article>
             <article>
               <span>03</span>
-              <h3>Gate role-specific actions</h3>
-              <p>Transparent urban/rural sensitivity assumptions shape the impact lens; stale inputs suppress prompts and consequential decisions require human verification.</p>
+              <h3>Translate signals into staged checks</h3>
+              <p>Residents, farmers, and municipal teams receive different reversible actions, verification steps, and explicit gates for costly or official decisions.</p>
             </article>
           </div>
         </div>
@@ -224,7 +242,7 @@
               <tbody>
                 <tr>
                   <td><a href="https://www.hydrosheds.org/products/hydrobasins">HydroBASINS Level 8</a></td>
-                  <td>Non-overlapping heat and water-stress prediction units with hydrological topology</td>
+                  <td>Non-overlapping heat and soil-water prediction units with hydrological topology</td>
                   <td>614 Germany-clipped sub-basins</td>
                   <td>Bundled geometry; live model fields sampled at basin centroids</td>
                 </tr>
@@ -236,27 +254,30 @@
                 </tr>
                 <tr>
                   <td><a href="https://open-meteo.com/en/docs/dwd-api">Open-Meteo DWD ICON API</a> / <a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html">DWD warnings</a></td>
-                  <td>Temperature, apparent temperature, VPD, precipitation, ET0, soil moisture, and official warning context</td>
+                  <td>Temperature, apparent temperature, VPD, hourly and daily precipitation, ET0, soil moisture, and official heat/rain warning context</td>
                   <td>Two retrospective and seven forecast days; current DWD warning feed</td>
                   <td>Integrated; scheduled refresh every three hours</td>
                 </tr>
                 <tr>
-                  <td><a href="https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-timeseries?tab=download">ERA5-Land</a> / <a href="https://cds.climate.copernicus.eu/datasets/derived-utci-historical?tab=overview">ERA5-HEAT</a></td>
-                  <td>Root-zone soil water, evaporation, transpiration, potential evaporation, and UTCI</td>
-                  <td>Historical baseline, bias checks, and future calibration</td>
-                  <td>Next calibration layer; not used in the current score</td>
+                  <td><a href="https://www.dwd.de/bodenfeuchteviewer">DWD soil moisture</a> / <a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a></td>
+                  <td>Authoritative soil-water monitoring, dry/wet climatological classes, and plant-available-water context</td>
+                  <td>Germany-wide reference services</td>
+                  <td>Linked for verification; not blended into the custom score</td>
                 </tr>
                 <tr>
-                  <td><a href="https://drought.emergency.copernicus.eu/tumbo/edo/map/">Copernicus EDO</a></td>
-                  <td>SPI, soil-moisture anomaly, FAPAR anomaly, and Combined Drought Indicator</td>
-                  <td>Drought anomaly and vegetation-response validation</td>
-                  <td>Next validation layer; not used in the current score</td>
+                  <td><a href="https://www.hochwasserzentralen.de/">German flood portal</a></td>
+                  <td>Official state flood warnings, gauges, and situation reports</td>
+                  <td>River and state authority context</td>
+                  <td>Linked as the required escalation source; HeatLens does not estimate river-flood probability</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="source-note">
-            This build uses live DWD ICON model fields through Open-Meteo and a separately displayed official DWD warning snapshot. Its 0-100 values are uncalibrated screening indices, not probabilities, observations, official warnings, or agronomic instructions.
+            Germany already has mature DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and
+            <a href="https://www.dwd.de/DE/leistungen/agrowetter_beregnung/agrobereg.html">specialised agricultural advice</a>.
+            HeatLens's role is to connect these services to transparent, role-specific decision checks.
+            Its 0-100 values are uncalibrated screening indices, not probabilities, observations, official warnings, flood forecasts, or agronomic instructions.
             HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO).
             Weather data: Open-Meteo (CC BY 4.0) using DWD ICON. Background map and place labels: &copy; OpenStreetMap contributors.
           </p>

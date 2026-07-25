@@ -19,7 +19,8 @@ function optionalId(params, key, pattern) {
 
 export function parseViewState(search = "") {
   const params = new URLSearchParams(search);
-  const requestedLayer = params.get("layer") === "drought" ? "water" : params.get("layer");
+  const legacyLayer = params.get("layer");
+  const requestedLayer = legacyLayer === "drought" || legacyLayer === "water" ? "dry" : legacyLayer;
   const date = params.get("date");
   const level = params.get("level");
   const audience = params.get("audience");

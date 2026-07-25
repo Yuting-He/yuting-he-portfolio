@@ -655,16 +655,40 @@ h1 {
   border-top: 1px solid var(--line);
 }
 
+.official-warning-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.official-warning-row > span {
+  color: var(--teal-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .official-warning-block strong {
   display: block;
   color: var(--ink-strong);
   font-size: 14px;
 }
 
-.official-warning-block p:last-child {
+.official-warning-row p {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
+}
+
+.authority-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .action-block {
@@ -687,8 +711,28 @@ h1 {
   padding-left: 20px;
 }
 
+#action-list li {
+  padding-left: 2px;
+}
+
 #action-list li + li {
   margin-top: 8px;
+}
+
+#action-list li strong,
+#action-list li span {
+  display: block;
+}
+
+#action-list li strong {
+  margin-bottom: 2px;
+  color: var(--teal-dark);
+  font-size: 12px;
+}
+
+#action-list li span {
+  color: var(--ink);
+  font-size: 14px;
 }
 
 .decision-note,

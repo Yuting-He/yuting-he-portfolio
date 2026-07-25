@@ -7,7 +7,7 @@ const BASIN_PATH = resolve(ROOT, "assets/hydrobasins-de-level8.geojson");
 const OUTPUT_PATH = resolve(ROOT, "assets/live/forecast.json");
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/dwd-icon";
 const DWD_WARNINGS_URL = "https://www.dwd.de/DWD/warnungen/warnapp/json/warnings.json";
-const USER_AGENT = "HeatLensGermany/0.5 (+https://github.com/Yuting-He/yuting-he-portfolio)";
+const USER_AGENT = "HeatLensGermany/0.6 (+https://github.com/Yuting-He/yuting-he-portfolio)";
 const BATCH_SIZE = Number(process.env.HEATLENS_BATCH_SIZE || 100);
 const REQUEST_DELAY_MS = Number(process.env.HEATLENS_REQUEST_DELAY_MS || 11_000);
 const CONTEXT_PAST_DAYS = 4;
@@ -23,11 +23,12 @@ const DAILY_FIELDS = [
 ];
 const HOURLY_FIELDS = [
   "vapour_pressure_deficit",
+  "precipitation",
   "soil_moisture_3_to_9cm",
   "soil_moisture_9_to_27cm",
   "soil_moisture_27_to_81cm"
 ];
-const SOIL_FIELDS = HOURLY_FIELDS.slice(1);
+const SOIL_FIELDS = HOURLY_FIELDS.slice(2);
 const SOIL_DEPTH_WEIGHTS = [6, 18, 54];
 const STATE_IDS = {
   BW: "DE1", BY: "DE2", BE: "DE3", BB: "DE4", HB: "DE5", HH: "DE6",
@@ -130,25 +131,28 @@ export function summarizeForecastResponse(response, { trimContextDays = 0 } = {}
   const hourlyByDate = new Map();
   (response.hourly?.time || []).forEach((time, index) => {
     const date = time.slice(0, 10);
-    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { vpd: [], soil: [] });
+    if (!hourlyByDate.has(date)) hourlyByDate.set(date, { vpd: [], precipitation: [], soil: [] });
     const bucket = hourlyByDate.get(date);
     bucket.vpd.push(response.hourly.vapour_pressure_deficit?.[index]);
+    bucket.precipitation.push(response.hourly.precipitation?.[index]);
     bucket.soil.push(rootZoneMoistureAt(response, index));
   });
 
   const days = (response.daily?.time || []).map((date, index) => {
-    const hourly = hourlyByDate.get(date) || { vpd: [], soil: [] };
+    const hourly = hourlyByDate.get(date) || { vpd: [], precipitation: [], soil: [] };
     const values = {
       date,
       tmaxC: response.daily.temperature_2m_max?.[index],
       tminC: response.daily.temperature_2m_min?.[index],
       apparentMaxC: response.daily.apparent_temperature_max?.[index],
       precipitationMm: response.daily.precipitation_sum?.[index],
+      precipitation1hMaxMm: Math.max(...hourly.precipitation.filter(finite)),
       et0Mm: response.daily.et0_fao_evapotranspiration?.[index],
       vpdMaxKpa: Math.max(...hourly.vpd.filter(finite)),
       soilMoistureM3M3: average(hourly.soil)
     };
     if (!finite(values.vpdMaxKpa)) values.vpdMaxKpa = null;
+    if (!finite(values.precipitation1hMaxMm)) values.precipitation1hMaxMm = null;
     const available = Object.entries(values).filter(([key, value]) => key !== "date" && finite(value)).length;
     return {
       date,
@@ -156,10 +160,11 @@ export function summarizeForecastResponse(response, { trimContextDays = 0 } = {}
       tminC: finite(values.tminC) ? round(values.tminC) : null,
       apparentMaxC: finite(values.apparentMaxC) ? round(values.apparentMaxC) : null,
       precipitationMm: finite(values.precipitationMm) ? round(values.precipitationMm) : null,
+      precipitation1hMaxMm: finite(values.precipitation1hMaxMm) ? round(values.precipitation1hMaxMm) : null,
       et0Mm: finite(values.et0Mm) ? round(values.et0Mm) : null,
       vpdMaxKpa: finite(values.vpdMaxKpa) ? round(values.vpdMaxKpa, 2) : null,
       soilMoistureM3M3: finite(values.soilMoistureM3M3) ? round(values.soilMoistureM3M3, 3) : null,
-      completeness: Math.round(available / 7 * 100)
+      completeness: Math.round(available / 8 * 100)
     };
   });
 
@@ -203,12 +208,17 @@ export function parseDwdWarnings(text) {
   Object.values(payload.warnings || {}).flat().forEach((warning) => {
     const stateId = STATE_IDS[warning.stateShort];
     if (!stateId) return;
-    if (!states[stateId]) states[stateId] = { warningCount: 0, maxLevel: 0, heatWarningCount: 0, warnings: [] };
+    if (!states[stateId]) {
+      states[stateId] = { warningCount: 0, maxLevel: 0, heatWarningCount: 0, rainWarningCount: 0, warnings: [] };
+    }
     const target = states[stateId];
-    const isHeat = /HITZE/i.test(`${warning.event || ""} ${warning.headline || ""}`);
+    const warningText = `${warning.event || ""} ${warning.headline || ""}`;
+    const isHeat = /HITZE/i.test(warningText);
+    const isRain = /STARKREGEN|DAUERREGEN|ERGIEBIGER REGEN|NIEDERSCHLAG/i.test(warningText);
     target.warningCount += 1;
     target.maxLevel = Math.max(target.maxLevel, Number(warning.level) || 0);
     if (isHeat) target.heatWarningCount += 1;
+    if (isRain) target.rainWarningCount += 1;
     target.warnings.push({
       regionName: warning.regionName,
       event: warning.event,
@@ -216,7 +226,8 @@ export function parseDwdWarnings(text) {
       level: Number(warning.level) || 0,
       start: new Date(warning.start).toISOString(),
       end: new Date(warning.end).toISOString(),
-      isHeat
+      isHeat,
+      isRain
     });
   });
   Object.values(states).forEach((state) => {
@@ -250,7 +261,7 @@ export function validateLiveDataset(dataset, expectedBasinCount = 614) {
     }
     for (const day of basin.days) {
       const values = [
-        day.tmaxC, day.tminC, day.apparentMaxC, day.precipitationMm, day.et0Mm,
+        day.tmaxC, day.tminC, day.apparentMaxC, day.precipitationMm, day.precipitation1hMaxMm, day.et0Mm,
         day.vpdMaxKpa, day.soilMoistureM3M3, day.heatPersistenceDays,
         day.dryPersistenceDays, day.waterBalance3dMm, day.completeness
       ];
@@ -317,7 +328,7 @@ export async function buildLiveDataset() {
         apparentTemperature: "daily maximum (degC)",
         vapourPressureDeficit: "hourly maximum (kPa)",
         soilMoisture: "3-81 cm depth-weighted daily model mean (m3/m3)",
-        precipitation: "daily sum (mm)",
+        precipitation: "daily sum and hourly maximum (mm)",
         referenceEvapotranspiration: "FAO ET0 daily sum (mm)"
       }
     },

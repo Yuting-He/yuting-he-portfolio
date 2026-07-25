@@ -1,6 +1,6 @@
 # Yuting He Portfolio and HeatLens Germany
 
-Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applied AI implementation. The repository includes **HeatLens Germany**, a live multi-scale heat and water-stress screening application.
+Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applied AI implementation. The repository includes **HeatLens Germany**, a live multi-scale decision-support application for heat, dry stress, and excess water.
 
 - Portfolio: <https://yuting-he.github.io/yuting-he-portfolio/>
 - HeatLens: <https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html>
@@ -8,20 +8,24 @@ Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applie
 ## HeatLens capabilities
 
 - live DWD ICON model fields via the Open-Meteo DWD API
-- a separately displayed official DWD warning snapshot
+- separately displayed official DWD heat and heavy/persistent-rain warning context
 - two retrospective and seven forecast dates
 - 614 Germany-clipped HydroBASINS Level 8 prediction units
 - exact sub-basin x NUTS-3 overlap weights in EPSG:3035
 - 400 NUTS-3 district / urban-district views and 16 state summaries
 - GISCO 2024 1:1M boundaries over an OpenStreetMap base map
 - resident, farmer, and municipal decision lenses
-- heat, water-stress, and role-specific impact screening layers
+- separate heat, dry-stress, excess-water, and role-specific impact screening layers
+- staged low-regret actions and explicit human-verification gates for residents, farmers, and municipal teams
+- direct escalation links to DWD warnings, the German state flood portals, and the UFZ soil-water monitor
 - shareable URL state and JSON snapshot export
 - freshness, source completeness, and spatial coverage gates
 
 ## Decision boundary
 
-The weather and warning feeds are real, but HeatLens's 0-100 scores are transparent **uncalibrated screening indices**. They are not probabilities, observations, official warnings, medical advice, or agronomic instructions. Official DWD warning context is displayed separately and is never blended into the custom score.
+Germany already has DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and specialised agricultural advice. HeatLens does not replace them. Its purpose is to connect authoritative context and basin signals to role-specific, reversible decision checks.
+
+The weather and warning feeds are real, but HeatLens's 0-100 scores are transparent **uncalibrated screening indices**. They are not probabilities, observations, official warnings, flood forecasts, medical advice, or agronomic instructions. Official context is displayed separately and is never blended into the custom score.
 
 The current impact layer still uses explicit urban/rural exposure and crop-sensitivity assumptions. A snapshot older than 36 hours remains visible for audit, but the application suppresses suggested actions. See [`docs/heatwave-demo-data-plan.md`](docs/heatwave-demo-data-plan.md) for formulas, limitations, governance, and the calibration roadmap.
 
@@ -60,7 +64,7 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 ## Repository guide
 
 - `heatwave-demo.html`, `heatwave-demo.css`, `heatwave-demo.js` - live application interface
-- `heatwave-model.js` - transparent heat, water-stress, and impact screening model
+- `heatwave-model.js` - transparent heat, dry, excess-water, impact, and action-policy model
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
 - `assets/live/forecast.json` - last validated operational snapshot
 - `scripts/fetch-live-data.mjs` - Open-Meteo DWD ICON and DWD warning ingestion

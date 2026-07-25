@@ -87,8 +87,10 @@ elements.trendTitle = document.querySelector("#trend-title");
 elements.dateNote = document.querySelector("#scenario-date-note");
 elements.liveStatusBadge = document.querySelector("#live-status-badge");
 elements.liveStatusText = document.querySelector("#live-status-text");
-elements.officialWarningTitle = document.querySelector("#official-warning-title");
-elements.officialWarningDetail = document.querySelector("#official-warning-detail");
+elements.officialHeatTitle = document.querySelector("#official-heat-title");
+elements.officialHeatDetail = document.querySelector("#official-heat-detail");
+elements.officialRainTitle = document.querySelector("#official-rain-title");
+elements.officialRainDetail = document.querySelector("#official-rain-detail");
 elements.forcingSource = document.querySelector("#forcing-source");
 elements.sourceUpdated = document.querySelector("#source-updated");
 elements.operationalStatus = document.querySelector("#operational-status");
@@ -286,7 +288,8 @@ function metricsForUnit(level, id, date = state.date) {
   if (!metrics.available) {
     metrics.impactScore = Number.NaN;
     metrics.heatScore = Number.NaN;
-    metrics.waterStressScore = Number.NaN;
+    metrics.dryStressScore = Number.NaN;
+    metrics.wetStressScore = Number.NaN;
   }
   state.metricCache.set(cacheKey, metrics);
   return metrics;
@@ -669,24 +672,38 @@ function stateIdForUnit(unit) {
   return unit.feature.__stateId || state.selectedState;
 }
 
-function renderOfficialWarning(unit) {
+function warningContextForUnit(unit) {
   const warningFeed = state.liveData.warnings;
   const stateId = stateIdForUnit(unit);
-  const regionWarnings = warningFeed.states?.[stateId];
+  return warningFeed.states?.[stateId] || { heatWarningCount: 0, rainWarningCount: 0, warnings: [] };
+}
+
+function renderOfficialWarning(unit) {
+  const warningFeed = state.liveData.warnings;
+  const regionWarnings = warningContextForUnit(unit);
   if (warningFeed.status !== "available") {
-    elements.officialWarningTitle.textContent = "DWD warning feed unavailable";
-    elements.officialWarningDetail.textContent = "Open the official DWD service before making a protective decision.";
+    elements.officialHeatTitle.textContent = "DWD feed unavailable";
+    elements.officialHeatDetail.textContent = "Open the official DWD service before making a protective decision.";
+    elements.officialRainTitle.textContent = "Rain warning context unavailable";
+    elements.officialRainDetail.textContent = "Check DWD and the responsible state flood portal directly.";
     return;
   }
   const heatWarnings = (regionWarnings?.warnings || []).filter((warning) => warning.isHeat);
   if (heatWarnings.length) {
-    elements.officialWarningTitle.textContent = heatWarnings[0].event || "Active DWD heat warning";
-    elements.officialWarningDetail.textContent = `${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}. Feed issued ${formatTimestamp(warningFeed.issuedAt)}.`;
-    return;
+    elements.officialHeatTitle.textContent = heatWarnings[0].event || "Active DWD heat warning";
+    elements.officialHeatDetail.textContent = `${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}.`;
+  } else {
+    elements.officialHeatTitle.textContent = "No DWD heat warning in this snapshot";
+    elements.officialHeatDetail.textContent = "Current-feed context only; this is not an all-clear for the selected forecast date.";
   }
-  const otherCount = regionWarnings?.warningCount || 0;
-  elements.officialWarningTitle.textContent = "No DWD heat warning in this snapshot";
-  elements.officialWarningDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)}${otherCount ? `; ${otherCount} other weather warning${otherCount === 1 ? " is" : "s are"} active in this state` : ""}. This is current-feed context, not an all-clear for the selected forecast date.`;
+  const rainWarnings = (regionWarnings?.warnings || []).filter((warning) => warning.isRain);
+  if (rainWarnings.length) {
+    elements.officialRainTitle.textContent = rainWarnings[0].event || "Active DWD rain warning";
+    elements.officialRainDetail.textContent = `${rainWarnings[0].regionName}: ${rainWarnings[0].headline || "See DWD for details"}.`;
+  } else {
+    elements.officialRainTitle.textContent = "No DWD heavy or persistent rain warning in this snapshot";
+    elements.officialRainDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)}. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
+  }
 }
 
 function renderDetails() {
@@ -719,12 +736,18 @@ function renderDetails() {
     renderTrend(unit);
     return;
   }
-  const guidance = actionsFor(metrics, state.audience);
+  const warningContext = warningContextForUnit(unit);
+  const guidance = actionsFor(metrics, state.audience, {
+    heatWarningCount: warningContext.heatWarningCount || 0,
+    rainWarningCount: warningContext.rainWarningCount || 0
+  });
   elements.regionSummary.textContent = `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
   elements.signalList.replaceChildren(
     appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
     appendSignal("Atmospheric demand", `VPD max ${metrics.vpdMaxKpa} kPa | FAO ET0 ${metrics.et0Mm} mm/day`),
     appendSignal("Water context", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm`),
+    appendSignal("Rain intensity", `${metrics.precipitationMm} mm/day | ${metrics.precipitation1hMaxMm} mm max in 1 hour`),
+    appendSignal("Water screening", `dry ${metrics.dryStressScore}/100 | excess water ${metrics.wetStressScore}/100`),
     appendSignal("Persistence", `heat ${metrics.heatPersistenceDays} day${metrics.heatPersistenceDays === 1 ? "" : "s"} | dry ${metrics.dryPersistenceDays} day${metrics.dryPersistenceDays === 1 ? "" : "s"}`),
     appendSignal("Data quality", `${metrics.completeness}% source completeness | ${metrics.spatialCoverage}% exact spatial overlap`),
     appendSignal("Impact assumptions", `urban/rural exposure ${metrics.exposure}/100 | crop sensitivity ${metrics.cropSensitivity}/100`)
@@ -732,7 +755,11 @@ function renderDetails() {
   const actions = state.freshness.stale ? [] : guidance.actions;
   elements.actionList.replaceChildren(...actions.map((action) => {
     const item = document.createElement("li");
-    item.textContent = action;
+    const category = document.createElement("strong");
+    category.textContent = action.category;
+    const text = document.createElement("span");
+    text.textContent = action.text;
+    item.append(category, text);
     return item;
   }));
   elements.confidence.textContent = `${metrics.completeness}% source completeness`;

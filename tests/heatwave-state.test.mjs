@@ -7,7 +7,7 @@ test("shared live view state round-trips through URL parameters", () => {
     date: "2026-07-22",
     level: "basin",
     audience: "farmers",
-    layer: "water",
+    layer: "dry",
     selectedState: "DE2",
     selectedDistrict: "DE21H",
     selectedBasin: "2080469900"
@@ -15,8 +15,9 @@ test("shared live view state round-trips through URL parameters", () => {
   assert.deepEqual(parseViewState(`?${serializeViewState(source)}`), source);
 });
 
-test("legacy drought links migrate to the water-stress layer", () => {
-  assert.equal(parseViewState("?layer=drought").layer, "water");
+test("legacy drought and water links migrate to the dry-stress layer", () => {
+  assert.equal(parseViewState("?layer=drought").layer, "dry");
+  assert.equal(parseViewState("?layer=water").layer, "dry");
 });
 
 test("invalid shared state falls back to a safe default view", () => {

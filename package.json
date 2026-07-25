@@ -1,8 +1,8 @@
 {
   "name": "yuting-he-portfolio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
-  "description": "Portfolio and HeatLens Germany live multi-scale heat and water-stress screening application.",
+  "description": "Portfolio and HeatLens Germany role-specific heat, dry, and excess-water decision-support application.",
   "type": "module",
   "license": "MIT",
   "repository": {
