@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: "17 */3 * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -32,7 +32,10 @@ jobs:
         with:
           node-version: 22
 
-      - name: Refresh DWD ICON and DWD warning snapshot
+      - name: Install data-adapter dependencies
+        run: npm ci
+
+      - name: Refresh observed, soil-water and ICON ensemble snapshot
         id: refresh
         continue-on-error: true
         run: npm run refresh-data
@@ -54,11 +57,19 @@ jobs:
         if: steps.publish-decision.outputs.publish == 'true'
         uses: actions/configure-pages@v6
 
+      - name: Prepare static site artifact
+        if: steps.publish-decision.outputs.publish == 'true'
+        shell: bash
+        run: |
+          mkdir _site
+          cp .nojekyll index.html styles.css heatwave-demo.html heatwave-demo.css heatwave-demo.js heatwave-model.js heatwave-state.js LICENSE THIRD_PARTY_NOTICES.md _site/
+          cp -R assets vendor _site/
+
       - name: Upload site artifact
         if: steps.publish-decision.outputs.publish == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _site
 
   deploy:
     needs: build

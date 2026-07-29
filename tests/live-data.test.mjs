@@ -21,6 +21,42 @@ test("published live snapshot covers every basin and nine analysis dates", () =>
   assert.equal(snapshot.forecast.dates.length, 9);
   assert.equal(new Set(snapshot.basins.map((basin) => basin.id)).size, 614);
   assert.ok(Number.isFinite(Date.parse(snapshot.generatedAt)));
+  assert.equal(snapshot.schema, "heatlens-live/v3");
+  assert.equal(snapshot.observations.radolan.status, "available");
+  assert.ok(snapshot.observations.dwdTemperature.stationCount >= 80);
+  assert.equal(snapshot.soilMoisture.ufz.status, "available");
+  assert.deepEqual(snapshot.soilMoisture.dwd.rootZoneDepthsCm, [30, 60, 90]);
+  for (const source of Object.values(snapshot.sourceFreshness.sources)) {
+    assert.equal(source.current, true);
+    assert.ok(source.ageHoursAtGeneration <= source.maximumAgeHours);
+  }
+});
+
+test("dated observation baselines never leak into earlier retrospective dates", () => {
+  const ufzDate = snapshot.soilMoisture.ufz.validAt.slice(0, 10);
+  const dwdSoilDate = snapshot.soilMoisture.dwd.validAt.slice(0, 10);
+  for (const basin of snapshot.basins) {
+    for (const day of basin.days) {
+      if (day.date < ufzDate) {
+        assert.equal(day.ufzTopsoilSmi, null);
+        assert.equal(day.ufzTotalSmi, null);
+      }
+      if (day.date < dwdSoilDate) {
+        assert.equal(day.dwdNfkDominantPct, null);
+        assert.equal(day.dwdNfkMaizePct, null);
+      }
+      if (day.date < basin.context.dwdCurrentDayDate) {
+        assert.equal(day.radolanPrecipitation24hMm, null);
+        assert.equal(day.dwdLatestTemperatureC, null);
+      }
+    }
+  }
+});
+
+test("a stale component source invalidates an otherwise fresh snapshot", () => {
+  const stale = structuredClone(snapshot);
+  stale.soilMoisture.ufz.validAt = new Date(Date.parse(stale.generatedAt) - 120 * 3_600_000).toISOString();
+  assert.throws(() => validateLiveDataset(stale), /ufz source time/i);
 });
 
 test("published weather values stay within broad physical guardrails", () => {
@@ -35,7 +71,17 @@ test("published weather values stay within broad physical guardrails", () => {
       assert.ok(day.vpdMaxKpa >= 0 && day.vpdMaxKpa <= 12);
       assert.ok(day.soilMoistureM3M3 >= 0 && day.soilMoistureM3M3 <= 0.8);
       assert.ok(day.completeness >= 85);
+      if (snapshot.forecast.dates.indexOf(day.date) >= snapshot.forecast.pastDays) {
+        assert.ok(day.ensembleMemberCount === 20 || day.ensembleMemberCount === 40);
+        assert.ok(day.ensemblePeakHourTemperatureSdC >= 0 && day.ensemblePeakHourTemperatureSdC <= 15);
+        assert.ok(day.ensembleMaxHourlyPrecipitationSdMm >= 0);
+      }
     }
+    assert.ok(basin.context.ufzTopsoilSmi >= 0 && basin.context.ufzTopsoilSmi <= 1);
+    assert.ok(basin.context.ufzTotalSmi >= 0 && basin.context.ufzTotalSmi <= 1);
+    assert.ok(basin.context.ufzPlantAvailableWaterPct >= 0);
+    assert.ok(basin.context.radolanPrecipitation24hMm >= 0);
+    assert.ok(Number.isFinite(basin.context.dwdLatestTemperatureC));
   }
 });
 
@@ -96,6 +142,29 @@ test("hourly VPD and root-zone soil moisture are summarized without invented fie
   assert.equal(day.soilMoistureM3M3, 0.255);
   assert.equal(day.waterBalance3dMm, -5);
   assert.equal(day.completeness, 100);
+});
+
+test("ICON ensemble hourly member standard deviation is sampled at the daily thermal peak", async () => {
+  const { summarizeEnsembleResponse } = await import("../scripts/fetch-live-data.mjs");
+  const response = {
+    hourly: {
+      time: ["2026-07-20T12:00", "2026-07-20T15:00"],
+      temperature_2m: [29, 32],
+      temperature_2m_spread: [0.8, 1.4],
+      precipitation: [0.2, 1.1],
+      precipitation_spread: [0.4, 2.6]
+    },
+    daily: {
+      time: ["2026-07-20"],
+      temperature_2m_max: [32],
+      precipitation_sum: [1.3]
+    }
+  };
+  const [day] = summarizeEnsembleResponse(response, { label: "ICON-D2-EPS", members: 20 });
+  assert.equal(day.ensemblePeakHourTemperatureSdC, 1.4);
+  assert.equal(day.ensembleMaxHourlyPrecipitationSdMm, 2.6);
+  assert.equal(day.ensembleMemberCount, 20);
+  assert.equal(day.ensembleCompleteness, 100);
 });
 
 test("DWD JSONP is parsed and heat alerts stay separate by state", () => {

@@ -1,9 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  FIELD_CONTEXTS,
   aggregatePredictions,
   actionsFor,
   buildLiveBasinPrediction,
+  evidenceConfidence,
   freshnessStatus,
   isIsoDate,
   scoreForLayer
@@ -135,4 +137,108 @@ test("very high water stress escalates without autonomous operational decisions"
   assert.match(farmerText, /do not change harvest timing/i);
   assert.match(municipalText, /only authorised teams may decide road closures/i);
   assert.doesNotMatch(farmerText, /\b\d+\s*(?:mm|litres?|l\/m)/i);
+});
+
+test("UFZ percentile observations strengthen dry-state screening without replacing the forecast", () => {
+  const normal = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    ufzTopsoilSmi: 0.5,
+    ufzTotalSmi: 0.5
+  });
+  const drought = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    ufzTopsoilSmi: 0.03,
+    ufzTotalSmi: 0.02
+  });
+  assert.ok(drought.dryStressScore > normal.dryStressScore);
+  assert.equal(drought.tmaxC, normal.tmaxC);
+});
+
+test("crop stage selects a measured root-zone depth and changes farmer prioritisation", () => {
+  const prediction = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    dwdNfkMaize30Pct: 65,
+    dwdNfkMaize60Pct: 42,
+    dwdNfkMaize90Pct: 18
+  });
+  const establishment = aggregatePredictions([prediction], {
+    audience: "farmers",
+    crop: "maize",
+    stage: "establishment",
+    soil: "local"
+  });
+  const flowering = aggregatePredictions([prediction], {
+    audience: "farmers",
+    crop: "maize",
+    stage: "flowering",
+    soil: "local"
+  });
+  assert.equal(establishment.rootDepthCm, 30);
+  assert.equal(establishment.dwdNfkPct, 65);
+  assert.equal(establishment.dwdNfkCoveragePct, 100);
+  assert.equal(flowering.rootDepthCm, 90);
+  assert.equal(flowering.dwdNfkPct, 18);
+  assert.ok(flowering.dryStressScore > establishment.dryStressScore);
+  assert.ok(flowering.impactScore > establishment.impactScore);
+  assert.equal(FIELD_CONTEXTS.crops.maize.label, "Maize");
+
+  const missing = buildLiveBasinPrediction({ ...basin, id: "missing" }, mildDay);
+  const partial = aggregatePredictions([prediction, missing], {
+    audience: "farmers",
+    crop: "maize",
+    stage: "flowering"
+  });
+  assert.equal(partial.dwdNfkCoveragePct, 50);
+  assert.equal(partial.dwdNfkPct, null);
+});
+
+test("ensemble dispersion and observed validation produce an auditable evidence grade", () => {
+  const future = aggregatePredictions([buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    ensembleDailyTmaxMeanC: 29,
+    ensemblePeakHourTemperatureSdC: 3.8,
+    ensembleDailyPrecipitationMeanMm: 4,
+    ensembleMaxHourlyPrecipitationSdMm: 6,
+    ensembleMemberCount: 40
+  })]);
+  const observed = aggregatePredictions([buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    dwdObservedTmaxC: 26.5,
+    dwdLatestTemperatureC: 24,
+    dwdStationDistanceKm: 8,
+    dwdObservationKind: "complete-day",
+    dwdStationId: "A"
+  })]);
+  future.spatialCoverage = 100;
+  observed.spatialCoverage = 100;
+  assert.ok(evidenceConfidence(future).score < evidenceConfidence(observed).score);
+  assert.match(evidenceConfidence(future).reason, /member standard deviations/i);
+  assert.equal(observed.temperatureValidationErrorC, 0.5);
+  assert.equal(observed.temperatureValidationMaeC, 0.5);
+  assert.match(evidenceConfidence(observed).reason, /validated/i);
+  assert.match(evidenceConfidence({ ...observed, dwdObservationKind: "day-so-far" }).reason, /provisional/i);
+});
+
+test("regional DWD validation pairs each basin forecast with its matched station", () => {
+  const first = buildLiveBasinPrediction({ ...basin, id: "one", properties: { SUB_AREA: 1 } }, {
+    ...mildDay,
+    tmaxC: 30,
+    dwdObservedTmaxC: 29,
+    dwdObservationKind: "complete-day",
+    dwdStationId: "A"
+  });
+  const second = buildLiveBasinPrediction({ ...basin, id: "two", properties: { SUB_AREA: 3 } }, {
+    ...mildDay,
+    tmaxC: 25,
+    dwdObservedTmaxC: 27,
+    dwdObservationKind: "complete-day",
+    dwdStationId: "B"
+  });
+  const regional = aggregatePredictions([first, second]);
+
+  assert.equal(regional.dwdObservedTmaxC, 27.5);
+  assert.equal(regional.temperatureValidationBiasC, -1.3);
+  assert.equal(regional.temperatureValidationMaeC, 1.8);
+  assert.equal(regional.dwdObservedStationCount, 2);
+  assert.equal(regional.dwdObservationKind, "complete-day");
 });

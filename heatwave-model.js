@@ -1,5 +1,5 @@
-export const MODEL_VERSION = "0.6.0-decision";
-export const RECOMMENDATION_POLICY_VERSION = "0.6.0";
+export const MODEL_VERSION = "0.7.0-observed-eps";
+export const RECOMMENDATION_POLICY_VERSION = "0.7.0";
 
 export const AUDIENCES = {
   residents: "Residents",
@@ -14,10 +14,42 @@ export const LAYERS = {
   wet: "Excess-water stress"
 };
 
+export const FIELD_CONTEXTS = Object.freeze({
+  crops: Object.freeze({
+    dominant: Object.freeze({ label: "Local dominant land use", fieldPrefix: "dwdNfkDominant", sensitivity: 55 }),
+    grass: Object.freeze({ label: "Grassland", fieldPrefix: "dwdNfkGrass", sensitivity: 45 }),
+    maize: Object.freeze({ label: "Maize", fieldPrefix: "dwdNfkMaize", sensitivity: 75 }),
+    winterWheat: Object.freeze({ label: "Winter wheat", fieldPrefix: "dwdNfkWinterWheat", sensitivity: 65 })
+  }),
+  stages: Object.freeze({
+    establishment: Object.freeze({ label: "Establishment", sensitivity: 70, rootDepthCm: 30 }),
+    vegetative: Object.freeze({ label: "Vegetative", sensitivity: 55, rootDepthCm: 60 }),
+    flowering: Object.freeze({ label: "Flowering / yield formation", sensitivity: 85, rootDepthCm: 90 }),
+    maturity: Object.freeze({ label: "Maturity", sensitivity: 35, rootDepthCm: 90 })
+  }),
+  soils: Object.freeze({
+    local: Object.freeze({ label: "DWD / BUEK local profile", dryAdjustment: 0, wetAdjustment: 0 }),
+    sand: Object.freeze({ label: "Sandy override", dryAdjustment: 7, wetAdjustment: -4 }),
+    loam: Object.freeze({ label: "Loamy override", dryAdjustment: 1, wetAdjustment: 1 }),
+    clay: Object.freeze({ label: "Clayey override", dryAdjustment: -2, wetAdjustment: 8 })
+  })
+});
+
 const PREDICTION_FIELDS = [
   "area", "tmaxC", "tminC", "apparentMaxC", "precipitationMm", "precipitation1hMaxMm",
   "et0Mm", "vpdMaxKpa", "soilMoistureM3M3", "waterBalance3dMm", "heatPersistenceDays",
   "dryPersistenceDays", "completeness", "heatScore", "dryStressScore", "wetStressScore"
+];
+const OPTIONAL_PREDICTION_FIELDS = [
+  "ufzTopsoilSmi", "ufzTotalSmi", "ufzPlantAvailableWaterPct",
+  "dwdNfkDominantPct", "dwdNfkGrassPct", "dwdNfkMaizePct", "dwdNfkWinterWheatPct",
+  "dwdNfkDominant30Pct", "dwdNfkDominant60Pct", "dwdNfkDominant90Pct",
+  "dwdNfkGrass30Pct", "dwdNfkGrass60Pct", "dwdNfkGrass90Pct",
+  "dwdNfkMaize30Pct", "dwdNfkMaize60Pct", "dwdNfkMaize90Pct",
+  "dwdNfkWinterWheat30Pct", "dwdNfkWinterWheat60Pct", "dwdNfkWinterWheat90Pct",
+  "radolanPrecipitation24hMm", "dwdObservedTmaxC", "dwdLatestTemperatureC",
+  "dwdStationDistanceKm", "ensembleDailyTmaxMeanC", "ensemblePeakHourTemperatureSdC",
+  "ensembleDailyPrecipitationMeanMm", "ensembleMaxHourlyPrecipitationSdMm", "ensembleMemberCount"
 ];
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -25,6 +57,14 @@ const round = (value, digits = 0) => Number(value.toFixed(digits));
 const normalized = (value, min, max) => clamp((value - min) / (max - min), 0, 1) * 100;
 const reverseNormalized = (value, wet, dry) => normalized(wet - value, 0, wet - dry);
 const action = (category, text) => ({ category, text });
+const optionalNumber = (value, digits = 1) => Number.isFinite(value) ? round(value, digits) : null;
+
+function weightedBlend(parts) {
+  const available = parts.filter((part) => Number.isFinite(part.score));
+  const totalWeight = available.reduce((sum, part) => sum + part.weight, 0);
+  if (!totalWeight) return 0;
+  return available.reduce((sum, part) => sum + part.score * part.weight, 0) / totalWeight;
+}
 
 export function isIsoDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
@@ -63,23 +103,23 @@ export function buildLiveBasinPrediction(basin, day) {
     0,
     100
   );
-  const dryStressScore = clamp(
-    0.38 * reverseNormalized(day.soilMoistureM3M3, 0.36, 0.12) +
-    0.28 * normalized(-day.waterBalance3dMm, 0, 18) +
-    0.12 * normalized(day.et0Mm, 2, 7) +
-    0.12 * normalized(day.vpdMaxKpa, 0.8, 3.6) +
-    0.10 * normalized(day.dryPersistenceDays, 0, 7),
-    0,
-    100
-  );
-  const wetStressScore = clamp(
-    0.35 * normalized(day.soilMoistureM3M3, 0.30, 0.48) +
-    0.25 * normalized(day.waterBalance3dMm, 5, 45) +
-    0.25 * normalized(day.precipitationMm, 10, 55) +
-    0.15 * normalized(day.precipitation1hMaxMm, 5, 25),
-    0,
-    100
-  );
+  const dryStressScore = clamp(weightedBlend([
+    { weight: 0.28, score: reverseNormalized(day.soilMoistureM3M3, 0.36, 0.12) },
+    { weight: 0.20, score: normalized(-day.waterBalance3dMm, 0, 18) },
+    { weight: 0.10, score: normalized(day.et0Mm, 2, 7) },
+    { weight: 0.08, score: normalized(day.vpdMaxKpa, 0.8, 3.6) },
+    { weight: 0.06, score: normalized(day.dryPersistenceDays, 0, 7) },
+    { weight: 0.16, score: Number.isFinite(day.ufzTopsoilSmi) ? reverseNormalized(day.ufzTopsoilSmi, 0.4, 0.02) : null },
+    { weight: 0.12, score: Number.isFinite(day.ufzTotalSmi) ? reverseNormalized(day.ufzTotalSmi, 0.35, 0.02) : null }
+  ]), 0, 100);
+  const wetStressScore = clamp(weightedBlend([
+    { weight: 0.30, score: normalized(day.soilMoistureM3M3, 0.30, 0.48) },
+    { weight: 0.23, score: normalized(day.waterBalance3dMm, 5, 45) },
+    { weight: 0.23, score: normalized(day.precipitationMm, 10, 55) },
+    { weight: 0.12, score: normalized(day.precipitation1hMaxMm, 5, 25) },
+    { weight: 0.07, score: Number.isFinite(day.ufzTopsoilSmi) ? normalized(day.ufzTopsoilSmi, 0.7, 0.98) : null },
+    { weight: 0.05, score: Number.isFinite(day.ufzTotalSmi) ? normalized(day.ufzTotalSmi, 0.7, 0.98) : null }
+  ]), 0, 100);
 
   return {
     id,
@@ -99,7 +139,16 @@ export function buildLiveBasinPrediction(basin, day) {
     completeness: round(day.completeness),
     heatScore: round(heatScore),
     dryStressScore: round(dryStressScore),
-    wetStressScore: round(wetStressScore)
+    wetStressScore: round(wetStressScore),
+    ...Object.fromEntries(OPTIONAL_PREDICTION_FIELDS.map((field) => [
+      field,
+      optionalNumber(day[field], field.includes("Smi") ? 3 : field.includes("Spread") ? 2 : 1)
+    ])),
+    dwdObservationKind: day.dwdObservationKind || null,
+    ensembleModel: day.ensembleModel || null,
+    dwdStationId: day.dwdStationId || null,
+    dwdStationName: day.dwdStationName || null,
+    dwdObservedAt: day.dwdObservedAt || null
   };
 }
 
@@ -108,7 +157,29 @@ function weightedAverage(predictions, key) {
   return predictions.reduce((sum, prediction) => sum + prediction[key] * prediction.area, 0) / totalWeight;
 }
 
-export function aggregatePredictions(predictions, { audience = "residents", exposure = 50, cropSensitivity = 55 } = {}) {
+function weightedAverageOptional(predictions, key) {
+  const available = predictions.filter((prediction) => Number.isFinite(prediction[key]));
+  if (!available.length) return null;
+  const totalWeight = available.reduce((sum, prediction) => sum + prediction.area, 0) || 1;
+  return available.reduce((sum, prediction) => sum + prediction[key] * prediction.area, 0) / totalWeight;
+}
+
+function weightedCoverage(predictions, key) {
+  const totalWeight = predictions.reduce((sum, prediction) => sum + prediction.area, 0) || 1;
+  const availableWeight = predictions
+    .filter((prediction) => Number.isFinite(prediction[key]))
+    .reduce((sum, prediction) => sum + prediction.area, 0);
+  return availableWeight / totalWeight * 100;
+}
+
+export function aggregatePredictions(predictions, {
+  audience = "residents",
+  exposure = 50,
+  cropSensitivity = 55,
+  crop = "dominant",
+  stage = "vegetative",
+  soil = "local"
+} = {}) {
   if (!predictions.length) throw new Error("At least one basin prediction is required");
   if (!Object.hasOwn(AUDIENCES, audience)) throw new RangeError(`Unknown audience: ${audience}`);
   const dates = new Set(predictions.map((prediction) => prediction.date));
@@ -116,6 +187,12 @@ export function aggregatePredictions(predictions, { audience = "residents", expo
   if (predictions.some((prediction) => PREDICTION_FIELDS.some((key) => !Number.isFinite(prediction[key])) || prediction.area <= 0)) {
     throw new TypeError("Basin predictions must contain finite live values and positive overlap weights");
   }
+  if (!Object.hasOwn(FIELD_CONTEXTS.crops, crop)) throw new RangeError(`Unknown crop profile: ${crop}`);
+  if (!Object.hasOwn(FIELD_CONTEXTS.stages, stage)) throw new RangeError(`Unknown crop stage: ${stage}`);
+  if (!Object.hasOwn(FIELD_CONTEXTS.soils, soil)) throw new RangeError(`Unknown soil profile: ${soil}`);
+  const cropProfile = FIELD_CONTEXTS.crops[crop];
+  const stageProfile = FIELD_CONTEXTS.stages[stage];
+  const soilProfile = FIELD_CONTEXTS.soils[soil];
 
   const metrics = {
     basinCount: new Set(predictions.map((item) => item.id)).size,
@@ -136,8 +213,72 @@ export function aggregatePredictions(predictions, { audience = "residents", expo
     dryStressScore: round(weightedAverage(predictions, "dryStressScore")),
     wetStressScore: round(weightedAverage(predictions, "wetStressScore")),
     exposure: round(clamp(exposure, 0, 100)),
-    cropSensitivity: round(clamp(cropSensitivity, 0, 100))
+    cropSensitivity: round(clamp(
+      audience === "farmers"
+        ? (cropProfile.sensitivity + stageProfile.sensitivity) / 2
+        : cropSensitivity,
+      0,
+      100
+    )),
+    crop,
+    stage,
+    soil,
+    cropLabel: cropProfile.label,
+    stageLabel: stageProfile.label,
+    soilLabel: soilProfile.label
   };
+  for (const field of OPTIONAL_PREDICTION_FIELDS) {
+    const value = weightedAverageOptional(predictions, field);
+    metrics[field] = optionalNumber(value, field.includes("Smi") ? 3 : field.includes("Spread") ? 2 : 1);
+  }
+  const stationDistances = predictions
+    .map((prediction) => prediction.dwdStationDistanceKm)
+    .filter(Number.isFinite);
+  metrics.dwdStationMaxDistanceKm = stationDistances.length
+    ? round(Math.max(...stationDistances), 1)
+    : null;
+  const observedPairs = predictions.filter((prediction) => Number.isFinite(prediction.dwdObservedTmaxC));
+  const latestTemperatures = predictions.map((prediction) => prediction.dwdLatestTemperatureC).filter(Number.isFinite);
+  if (observedPairs.length) {
+    const observedArea = observedPairs.reduce((sum, prediction) => sum + prediction.area, 0);
+    const areaWeighted = (valueFor) => observedPairs.reduce(
+      (sum, prediction) => sum + valueFor(prediction) * prediction.area,
+      0
+    ) / observedArea;
+    metrics.dwdObservedTmaxC = round(areaWeighted((prediction) => prediction.dwdObservedTmaxC), 1);
+    metrics.temperatureValidationBiasC = round(areaWeighted(
+      (prediction) => prediction.tmaxC - prediction.dwdObservedTmaxC
+    ), 1);
+    metrics.temperatureValidationMaeC = round(areaWeighted(
+      (prediction) => Math.abs(prediction.tmaxC - prediction.dwdObservedTmaxC)
+    ), 1);
+    metrics.dwdObservedStationCount = new Set(
+      observedPairs.map((prediction) => prediction.dwdStationId).filter(Boolean)
+    ).size;
+  }
+  if (latestTemperatures.length) metrics.dwdLatestTemperatureC = round(Math.max(...latestTemperatures), 1);
+  metrics.rootDepthCm = stageProfile.rootDepthCm;
+  const selectedDwdNfkField = `${cropProfile.fieldPrefix}${stageProfile.rootDepthCm}Pct`;
+  metrics.dwdNfkCoveragePct = round(weightedCoverage(predictions, selectedDwdNfkField));
+  metrics.dwdNfkPct = metrics.dwdNfkCoveragePct >= 85 ? metrics[selectedDwdNfkField] : null;
+  metrics.ensembleModel = predictions.find((prediction) => prediction.ensembleModel)?.ensembleModel || null;
+  metrics.dwdObservationKind = observedPairs.length && observedPairs.every(
+    (prediction) => prediction.dwdObservationKind === "complete-day"
+  ) ? "complete-day" : predictions.find((prediction) => prediction.dwdObservationKind)?.dwdObservationKind || null;
+  metrics.dwdStationName = predictions.find((prediction) => prediction.dwdStationName)?.dwdStationName || null;
+  metrics.dwdObservedAt = predictions.map((prediction) => prediction.dwdObservedAt).filter(Boolean).sort().at(-1) || null;
+  if (Number.isFinite(metrics.dwdNfkPct)) {
+    const cropDrySignal = normalized(50 - metrics.dwdNfkPct, 0, 40);
+    const cropWetSignal = normalized(metrics.dwdNfkPct, 90, 135);
+    metrics.dryStressScore = round(clamp(0.82 * metrics.dryStressScore + 0.18 * cropDrySignal +
+      soilProfile.dryAdjustment, 0, 100));
+    metrics.wetStressScore = round(clamp(0.88 * metrics.wetStressScore + 0.12 * cropWetSignal +
+      soilProfile.wetAdjustment, 0, 100));
+  } else {
+    metrics.dryStressScore = round(clamp(metrics.dryStressScore + soilProfile.dryAdjustment, 0, 100));
+    metrics.wetStressScore = round(clamp(metrics.wetStressScore + soilProfile.wetAdjustment, 0, 100));
+  }
+  metrics.temperatureValidationErrorC = metrics.temperatureValidationBiasC ?? null;
 
   const audienceScores = {
     residents: 0.72 * metrics.heatScore + 0.13 * metrics.exposure +
@@ -176,6 +317,41 @@ export function fillColor(score) {
   return "#6f9f99";
 }
 
+export function evidenceConfidence(metrics) {
+  let score = 0.55 * clamp(metrics.completeness ?? 0, 0, 100) +
+    0.25 * clamp(metrics.spatialCoverage ?? 100, 0, 100) +
+    20;
+  const reasons = [];
+  if (Number.isFinite(metrics.ensemblePeakHourTemperatureSdC)) {
+    score -= 0.22 * normalized(metrics.ensemblePeakHourTemperatureSdC, 0.8, 4.5);
+    score -= 0.10 * normalized(metrics.ensembleMaxHourlyPrecipitationSdMm, 0.5, 8);
+    reasons.push(`${metrics.ensembleMemberCount || "ICON"}-member standard deviations included`);
+  } else {
+    reasons.push("no ensemble dispersion for this date");
+  }
+  if (Number.isFinite(metrics.temperatureValidationMaeC)) {
+    if (metrics.dwdObservationKind === "complete-day") {
+      score -= 0.18 * normalized(metrics.temperatureValidationMaeC, 1, 6);
+      reasons.push(`${metrics.dwdObservedStationCount || 1} DWD temperature station${metrics.dwdObservedStationCount === 1 ? "" : "s"} validated`);
+    } else {
+      score -= 8;
+      reasons.push("provisional DWD day-so-far check");
+    }
+  } else if (!Number.isFinite(metrics.ensemblePeakHourTemperatureSdC)) {
+    score -= 18;
+    reasons.push("no matched temperature observation");
+  }
+  const stationDistance = metrics.dwdStationMaxDistanceKm ?? metrics.dwdStationDistanceKm;
+  if (Number.isFinite(stationDistance) && stationDistance > 35) {
+    score -= Math.min(12, (stationDistance - 35) * 0.25);
+    reasons.push("some matched temperature stations are not local");
+  }
+  score = round(clamp(score, 0, 100));
+  if (score >= 78) return { label: "Stronger evidence", className: "strong", score, reason: reasons.join("; ") };
+  if (score >= 58) return { label: "Moderate evidence", className: "moderate", score, reason: reasons.join("; ") };
+  return { label: "Limited evidence", className: "limited", score, reason: reasons.join("; ") };
+}
+
 function officialCheck(options) {
   const heat = options?.heatWarningCount > 0;
   const rain = options?.rainWarningCount > 0;
@@ -191,20 +367,30 @@ export function actionsFor(metrics, audience, options = {}) {
   const dryBand = severity(metrics.dryStressScore);
   const wetBand = severity(metrics.wetStressScore);
   const actions = [];
+  const nfkStatus = Number.isFinite(metrics.dwdNfkPct)
+    ? metrics.dwdNfkPct < 30
+      ? `${metrics.dwdNfkPct}% nFK: DWD modelled plant water stress range`
+      : metrics.dwdNfkPct < 50
+        ? `${metrics.dwdNfkPct}% nFK: DWD modelled water-limitation range`
+        : metrics.dwdNfkPct > 100
+          ? `${metrics.dwdNfkPct}% nFK: high local profile saturation`
+          : `${metrics.dwdNfkPct}% nFK`
+    : "DWD crop-specific nFK unavailable at this location";
 
   if (audience === "farmers") {
     actions.push(action(
       "Verify",
-      "Check representative fields at root depth, a nearby gauge or station, recent rainfall, crop stage, and soil water-holding capacity before changing operations."
+      `Check representative fields for ${metrics.cropLabel || "the selected crop"} at root depth before changing operations. ` +
+      `${nfkStatus}; compare it with field measurements, recent rainfall, the selected ${metrics.stageLabel || "growth stage"}, and local water rules.`
     ));
     if (metrics.dryStressScore >= 35) {
       actions.push(action(
         dryBand.label,
         metrics.dryStressScore >= 75
-          ? "Escalate to field-by-field review: prioritise critical crop stages and shallow or light soils, verify water availability and restrictions, and obtain agronomic confirmation before any major intervention."
+          ? "Escalate to field-by-field review: prioritise critical crop stages and shallow or light soils, check root-zone depletion and irrigation-system capacity, verify water availability and restrictions, and obtain agronomic confirmation before any major intervention."
           : metrics.dryStressScore >= 55
-            ? "Prioritise vulnerable crop stages and shallow or light soils for inspection; compare the deficit with a locally calibrated irrigation trigger and current water-allocation rules."
-            : "Track soil moisture and crop symptoms more often; prepare an irrigation check, but do not infer an application volume from this index."
+            ? "Prioritise vulnerable crop stages and shallow or light soils for inspection; compare UFZ SMI, DWD nFK, a measured root-zone profile, and a locally calibrated irrigation trigger before scheduling."
+            : "Track soil moisture and crop symptoms more often; prepare an irrigation check when measured nFK approaches the local trigger, but do not infer an application volume from this index."
       ));
     }
     if (metrics.wetStressScore >= 35) {

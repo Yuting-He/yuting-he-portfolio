@@ -1,16 +1,26 @@
 import {
   AUDIENCES,
+  FIELD_CONTEXTS,
   LAYERS,
   MODEL_VERSION,
   actionsFor,
   aggregatePredictions,
   buildLiveBasinPrediction,
+  evidenceConfidence,
   fillColor,
   freshnessStatus,
   scoreForLayer,
   severity
 } from "./heatwave-model.js";
-import { DEFAULT_VIEW, parseViewState, resolveForecastDate, serializeViewState } from "./heatwave-state.js";
+import {
+  DEFAULT_VIEW,
+  isRetrospectiveDate,
+  parseViewState,
+  resolveForecastDate,
+  runtimeSourceFreshness,
+  serializeViewState,
+  warningAppliesToDate
+} from "./heatwave-state.js";
 
 const STATE_URL = "./assets/nuts1-de.geojson";
 const DISTRICT_URL = "./assets/nuts3-de.geojson";
@@ -39,6 +49,7 @@ const state = {
   liveByBasin: new Map(),
   availableDates: [],
   freshness: { label: "Unavailable", className: "unavailable", ageHours: null, stale: true },
+  sourceFreshness: { sources: {}, staleSources: [], stale: true },
   predictionCache: new Map(),
   metricCache: new Map(),
   d3: null,
@@ -73,6 +84,7 @@ const elements = {
   trend: document.querySelector("#risk-trend"),
   trendLayer: document.querySelector("#trend-layer-label"),
   confidence: document.querySelector("#confidence-label"),
+  actionHeadingLabel: document.querySelector("#action-heading-label"),
   actionList: document.querySelector("#action-list"),
   decisionNote: document.querySelector("#decision-note"),
   resolutionNote: document.querySelector("#resolution-note"),
@@ -91,9 +103,14 @@ elements.officialHeatTitle = document.querySelector("#official-heat-title");
 elements.officialHeatDetail = document.querySelector("#official-heat-detail");
 elements.officialRainTitle = document.querySelector("#official-rain-title");
 elements.officialRainDetail = document.querySelector("#official-rain-detail");
+elements.officialWarningHeading = document.querySelector("#official-warning-heading");
 elements.forcingSource = document.querySelector("#forcing-source");
 elements.sourceUpdated = document.querySelector("#source-updated");
 elements.operationalStatus = document.querySelector("#operational-status");
+elements.fieldContext = document.querySelector("#field-context");
+elements.cropSelect = document.querySelector("#crop-profile");
+elements.stageSelect = document.querySelector("#crop-stage");
+elements.soilSelect = document.querySelector("#soil-profile");
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -135,14 +152,52 @@ function freshnessText() {
   return `updated ${Math.floor(state.freshness.ageHours)} hours ago`;
 }
 
+function updateOperationalFreshness() {
+  const snapshotFreshness = freshnessStatus(state.liveData.generatedAt);
+  state.sourceFreshness = runtimeSourceFreshness(state.liveData.sourceFreshness);
+  state.freshness = state.sourceFreshness.stale
+    ? {
+        ...snapshotFreshness,
+        label: "Source stale",
+        className: "stale",
+        stale: true,
+        sourceStale: true
+      }
+    : snapshotFreshness;
+}
+
+function staleSourceNames() {
+  const names = {
+    radolan: "RADOLAN",
+    dwdTemperature: "DWD temperature",
+    ufz: "UFZ soil",
+    dwdSoil: "DWD soil"
+  };
+  return state.sourceFreshness.staleSources.map((source) => names[source] || source).join(", ");
+}
+
 function validateLivePayload(payload, basinFeatures) {
-  if (payload?.schema !== "heatlens-live/v1") throw new Error("Live forecast schema unavailable");
+  if (payload?.schema !== "heatlens-live/v3") throw new Error("Live forecast schema unavailable");
   const dates = payload.forecast?.dates;
   if (!Array.isArray(dates) || !dates.length || dates.some((date, index) => !/^\d{4}-\d{2}-\d{2}$/.test(date) || index && date <= dates[index - 1])) {
     throw new Error("Live forecast date window is invalid");
   }
   if (!Array.isArray(payload.basins) || payload.basins.length !== basinFeatures.length) {
     throw new Error("Live forecast basin coverage is incomplete");
+  }
+  const generatedFreshness = freshnessStatus(payload.generatedAt);
+  if (!Number.isFinite(generatedFreshness.ageHours) || generatedFreshness.ageHours < -2) {
+    throw new Error("Live forecast generation time is invalid");
+  }
+  const sourceFreshness = payload.sourceFreshness?.sources;
+  for (const source of ["radolan", "dwdTemperature", "ufz", "dwdSoil"]) {
+    const status = sourceFreshness?.[source];
+    if (!status?.current || !Number.isFinite(status.ageHoursAtGeneration) ||
+        !Number.isFinite(status.maximumAgeHours) ||
+        status.ageHoursAtGeneration < -2 ||
+        status.ageHoursAtGeneration > status.maximumAgeHours) {
+      throw new Error(`Live ${source} source is outside its freshness policy`);
+    }
   }
   const geometryIds = new Set(basinFeatures.map((feature) => String(feature.properties.HYBAS_ID)));
   const payloadIds = new Set();
@@ -152,6 +207,11 @@ function validateLivePayload(payload, basinFeatures) {
     payloadIds.add(basinId);
     if (!geometryIds.has(basinId) || basin.days?.map((day) => day.date).join() !== dates.join()) {
       throw new Error(`Live forecast does not align with basin ${basin.id}`);
+    }
+    if (!basin.context || !Number.isFinite(basin.context.ufzTopsoilSmi) ||
+        !Number.isFinite(basin.context.radolanPrecipitation24hMm) ||
+        !Number.isFinite(basin.context.dwdLatestTemperatureC)) {
+      throw new Error(`Observed context is incomplete for basin ${basin.id}`);
     }
     if (basin.days.some((day) => day.completeness < 85)) {
       throw new Error(`Live forecast is incomplete for basin ${basin.id}`);
@@ -265,7 +325,7 @@ function weightedPredictionsForUnit(level, id, date) {
 }
 
 function metricsForUnit(level, id, date = state.date) {
-  const cacheKey = `${date}|${state.audience}|${level}|${id}`;
+  const cacheKey = `${date}|${state.audience}|${state.crop}|${state.stage}|${state.soil}|${level}|${id}`;
   if (state.metricCache.has(cacheKey)) return state.metricCache.get(cacheKey);
   const predictions = weightedPredictionsForUnit(level, id, date);
   if (!predictions.length) throw new Error(`No live prediction values for ${level} ${id} on ${date}`);
@@ -273,7 +333,10 @@ function metricsForUnit(level, id, date = state.date) {
   const metrics = aggregatePredictions(predictions, {
     audience: state.audience,
     exposure: profile.exposure,
-    cropSensitivity: profile.cropSensitivity
+    cropSensitivity: profile.cropSensitivity,
+    crop: state.crop,
+    stage: state.stage,
+    soil: state.soil
   });
   if (level === "basin") {
     metrics.spatialCoverage = 100;
@@ -396,22 +459,36 @@ function renderControls() {
   elements.previousDay.disabled = dateIndex <= 0;
   elements.nextDay.disabled = dateIndex < 0 || dateIndex >= state.availableDates.length - 1;
   elements.dateNote.textContent = `${formatDate(state.availableDates[0])} - ${formatDate(state.availableDates.at(-1))}`;
+  elements.fieldContext.hidden = state.audience !== "farmers";
+  elements.cropSelect.value = state.crop;
+  elements.stageSelect.value = state.stage;
+  elements.soilSelect.value = state.soil;
 }
 
 function renderSummary() {
   elements.coverage.textContent = `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
   elements.selectedDateValue.textContent = formatDate(state.date);
-  elements.predictionUnit.textContent = "HydroBASINS L8 / ICON";
+  elements.predictionUnit.textContent = "HydroBASINS L8 / observed + EPS";
   elements.dataStatus.textContent = `${state.freshness.label} - ${freshnessText()}`;
   elements.modelVersion.textContent = `v${MODEL_VERSION}`;
   elements.liveStatusBadge.textContent = `${state.freshness.label} model feed`;
   elements.liveStatusBadge.className = `scenario-badge ${state.freshness.className}`;
   elements.liveStatusText.textContent = state.freshness.stale
-    ? "The last valid forecast snapshot is older than 36 hours. Scores remain visible for audit, but suggested actions are suppressed."
-    : `DWD ICON weather fields were refreshed ${freshnessText()}. HeatLens scores are custom screening indices, not official warnings.`;
+    ? state.freshness.sourceStale
+      ? `${staleSourceNames()} exceeded the runtime freshness policy. Scores remain visible for audit, but suggested actions are suppressed.`
+      : "The last valid forecast snapshot is older than 36 hours. Scores remain visible for audit, but suggested actions are suppressed."
+    : `Snapshot ${freshnessText()}. Baselines: RADOLAN to ${formatTimestamp(state.liveData.observations.radolan.periodEnd)}, ` +
+      `DWD temperature to ${formatTimestamp(state.liveData.observations.dwdTemperature.observedAt)}, ` +
+      `UFZ ${formatDate(state.liveData.soilMoisture.ufz.validAt.slice(0, 10))}, and ` +
+      `DWD soil ${formatDate(state.liveData.soilMoisture.dwd.validAt.slice(0, 10))}. ` +
+      "HeatLens remains decision support, not an official warning.";
   elements.forcingSource.textContent = `${state.liveData.forecast.sourceModel} via Open-Meteo`;
   elements.sourceUpdated.textContent = formatTimestamp(state.liveData.generatedAt);
-  elements.operationalStatus.textContent = state.freshness.stale ? "Stale snapshot - actions suppressed" : "Live model data - screening only";
+  elements.operationalStatus.textContent = state.freshness.stale
+    ? state.freshness.sourceStale
+      ? "Source freshness limit exceeded - actions suppressed"
+      : "Stale snapshot - actions suppressed"
+    : "Live model data - screening only";
 }
 
 function updateRegionSelect(features) {
@@ -548,14 +625,19 @@ function rebuildMapLayers(features, nextFrameKey) {
   } else {
     state.scopeOverlay = null;
   }
-  const bounds = state.riskLayer.getBounds();
+  const bounds = state.scopeOverlay?.getBounds() || state.riskLayer.getBounds();
   if (bounds.isValid()) {
-    state.mapInstance.invalidateSize();
-    state.mapInstance.fitBounds(bounds, {
+    const fitOptions = {
       animate: false,
       maxZoom: state.level === "state" ? 6.5 : state.level === "district" ? 8.5 : 10.5,
       padding: [18, 18]
-    });
+    };
+    const fitCurrentFrame = () => {
+      state.mapInstance.invalidateSize({ animate: false, pan: false });
+      state.mapInstance.fitBounds(bounds, fitOptions);
+    };
+    fitCurrentFrame();
+    window.requestAnimationFrame(fitCurrentFrame);
   }
   state.mapFrameKey = nextFrameKey;
 }
@@ -681,6 +763,14 @@ function warningContextForUnit(unit) {
 function renderOfficialWarning(unit) {
   const warningFeed = state.liveData.warnings;
   const regionWarnings = warningContextForUnit(unit);
+  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
+  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
+  elements.officialWarningHeading.textContent = isRetrospective
+    ? "Current authoritative context - not a warning archive"
+    : "Current authoritative context";
+  const contextPrefix = isRetrospective
+    ? `Current feed issued ${formatTimestamp(warningFeed.issuedAt)}; retrospective coverage may be incomplete for ${formatDate(state.date)}. `
+    : "";
   if (warningFeed.status !== "available") {
     elements.officialHeatTitle.textContent = "DWD feed unavailable";
     elements.officialHeatDetail.textContent = "Open the official DWD service before making a protective decision.";
@@ -688,22 +778,99 @@ function renderOfficialWarning(unit) {
     elements.officialRainDetail.textContent = "Check DWD and the responsible state flood portal directly.";
     return;
   }
-  const heatWarnings = (regionWarnings?.warnings || []).filter((warning) => warning.isHeat);
+  const heatWarnings = (regionWarnings?.warnings || [])
+    .filter((warning) => warning.isHeat && warningAppliesToDate(warning, state.date));
   if (heatWarnings.length) {
     elements.officialHeatTitle.textContent = heatWarnings[0].event || "Active DWD heat warning";
-    elements.officialHeatDetail.textContent = `${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}.`;
+    elements.officialHeatDetail.textContent = `${contextPrefix}${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}.`;
   } else {
-    elements.officialHeatTitle.textContent = "No DWD heat warning in this snapshot";
-    elements.officialHeatDetail.textContent = "Current-feed context only; this is not an all-clear for the selected forecast date.";
+    elements.officialHeatTitle.textContent = "No published DWD heat warning overlaps the selected date";
+    elements.officialHeatDetail.textContent = isRetrospective
+      ? "The current feed is not a warning archive for this retrospective date."
+      : "The current feed does not cover the full forecast horizon; this is not an all-clear.";
   }
-  const rainWarnings = (regionWarnings?.warnings || []).filter((warning) => warning.isRain);
+  const rainWarnings = (regionWarnings?.warnings || [])
+    .filter((warning) => warning.isRain && warningAppliesToDate(warning, state.date));
   if (rainWarnings.length) {
     elements.officialRainTitle.textContent = rainWarnings[0].event || "Active DWD rain warning";
-    elements.officialRainDetail.textContent = `${rainWarnings[0].regionName}: ${rainWarnings[0].headline || "See DWD for details"}.`;
+    elements.officialRainDetail.textContent = `${contextPrefix}${rainWarnings[0].regionName}: ${rainWarnings[0].headline || "See DWD for details"}.`;
   } else {
-    elements.officialRainTitle.textContent = "No DWD heavy or persistent rain warning in this snapshot";
-    elements.officialRainDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)}. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
+    elements.officialRainTitle.textContent = "No published DWD rain warning overlaps the selected date";
+    elements.officialRainDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)} and does not cover the full forecast horizon. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
   }
+}
+
+function smiClass(value) {
+  if (!Number.isFinite(value)) return "unavailable";
+  if (value <= 0.02) return "exceptional drought";
+  if (value <= 0.05) return "extreme drought";
+  if (value <= 0.1) return "severe drought";
+  if (value <= 0.2) return "moderate drought";
+  if (value <= 0.3) return "unusual dryness";
+  if (value >= 0.98) return "exceptionally wet";
+  if (value >= 0.95) return "extremely wet";
+  if (value >= 0.9) return "severely wet";
+  if (value >= 0.8) return "moderately wet";
+  if (value >= 0.7) return "unusually wet";
+  return "normal range";
+}
+
+function observationText(metrics) {
+  if (Number.isFinite(metrics.dwdObservedTmaxC)) {
+    const kind = metrics.dwdObservationKind === "complete-day" ? "complete-day" : "day-so-far";
+    const bias = metrics.temperatureValidationBiasC;
+    const comparison = kind === "complete-day" ? "model bias" : "provisional forecast gap";
+    const comparisonText = Number.isFinite(bias)
+      ? `${comparison} ${bias >= 0 ? "+" : ""}${bias} °C`
+      : "validation comparison unavailable";
+    if (metrics.basinCount === 1) {
+      const station = metrics.dwdStationName ? ` ${metrics.dwdStationName}` : "";
+      const distance = Number.isFinite(metrics.dwdStationDistanceKm) ? ` | ${metrics.dwdStationDistanceKm} km away` : "";
+      return `DWD${station} ${kind} Tmax ${metrics.dwdObservedTmaxC} °C | ${comparisonText}${distance}`;
+    }
+    const errorLabel = kind === "complete-day" ? "MAE" : "provisional absolute gap";
+    const coverage = metrics.dwdObservedStationCount
+      ? ` | ${metrics.dwdObservedStationCount} stations, farthest match ${metrics.dwdStationMaxDistanceKm} km`
+      : "";
+    const errorText = Number.isFinite(metrics.temperatureValidationMaeC)
+      ? ` | ${errorLabel} ${metrics.temperatureValidationMaeC} °C`
+      : "";
+    return `DWD matched-station ${kind} Tmax ${metrics.dwdObservedTmaxC} °C, basin-weighted | ${comparisonText}${errorText}${coverage}`;
+  }
+  if (!Number.isFinite(metrics.dwdLatestTemperatureC) || !Number.isFinite(Date.parse(metrics.dwdObservedAt))) {
+    return `No DWD matched-station temperature observation is valid for ${formatDate(state.date)}`;
+  }
+  if (metrics.basinCount === 1) {
+    const distance = Number.isFinite(metrics.dwdStationDistanceKm) ? ` | ${metrics.dwdStationDistanceKm} km away` : "";
+    return `latest DWD ${metrics.dwdStationName || "matched station"} temperature ${metrics.dwdLatestTemperatureC} °C at ${formatTimestamp(metrics.dwdObservedAt)}${distance}`;
+  }
+  const farthestMatch = Number.isFinite(metrics.dwdStationMaxDistanceKm)
+    ? ` | farthest basin-station match ${metrics.dwdStationMaxDistanceKm} km`
+    : "";
+  return `latest DWD network temperature maximum ${metrics.dwdLatestTemperatureC} °C at ${formatTimestamp(metrics.dwdObservedAt)}${farthestMatch}`;
+}
+
+function ensembleText(metrics) {
+  if (!Number.isFinite(metrics.ensemblePeakHourTemperatureSdC)) {
+    return "No ICON ensemble-member dispersion is published for this retrospective date";
+  }
+  return `${metrics.ensembleModel} (${metrics.ensembleMemberCount} members) | member SD at hottest mean hour ${metrics.ensemblePeakHourTemperatureSdC} °C | max hourly precipitation member SD ${metrics.ensembleMaxHourlyPrecipitationSdMm} mm`;
+}
+
+function ufzText(metrics) {
+  if (!Number.isFinite(metrics.ufzTopsoilSmi) || !Number.isFinite(metrics.ufzTotalSmi)) {
+    return "No UFZ baseline is valid for this retrospective date";
+  }
+  const validDate = formatDate(state.liveData.soilMoisture.ufz.validAt.slice(0, 10));
+  return `baseline ${validDate}: topsoil SMI ${metrics.ufzTopsoilSmi} (${smiClass(metrics.ufzTopsoilSmi)}) | total-soil SMI ${metrics.ufzTotalSmi} (${smiClass(metrics.ufzTotalSmi)})`;
+}
+
+function radolanText(metrics) {
+  if (!Number.isFinite(metrics.radolanPrecipitation24hMm)) {
+    return "No RADOLAN baseline is valid for this retrospective date";
+  }
+  const radolan = state.liveData.observations.radolan;
+  return `${metrics.radolanPrecipitation24hMm} mm / rolling 24 h ending ${formatTimestamp(radolan.periodEnd)} | forecast ${metrics.precipitationMm} mm/day`;
 }
 
 function renderDetails() {
@@ -737,22 +904,47 @@ function renderDetails() {
     return;
   }
   const warningContext = warningContextForUnit(unit);
+  const datedWarnings = (warningContext.warnings || [])
+    .filter((warning) => warningAppliesToDate(warning, state.date));
+  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
+  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
   const guidance = actionsFor(metrics, state.audience, {
-    heatWarningCount: warningContext.heatWarningCount || 0,
-    rainWarningCount: warningContext.rainWarningCount || 0
+    heatWarningCount: datedWarnings.filter((warning) => warning.isHeat).length,
+    rainWarningCount: datedWarnings.filter((warning) => warning.isRain).length
   });
+  const confidence = evidenceConfidence(metrics);
+  const dwdSoilDate = formatDate(state.liveData.soilMoisture.dwd.validAt.slice(0, 10));
+  const fieldSignal = Number.isFinite(metrics.dwdNfkPct)
+    ? `baseline ${dwdSoilDate}: ${metrics.cropLabel}, mean ${metrics.dwdNfkPct}% nFK across 10 cm layers to ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% area coverage | ${metrics.soilLabel}`
+    : `${metrics.cropLabel}: DWD nFK baseline unavailable or below 85% area coverage (${metrics.dwdNfkCoveragePct}%) | ${metrics.soilLabel}`;
   elements.regionSummary.textContent = `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
   elements.signalList.replaceChildren(
     appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
-    appendSignal("Atmospheric demand", `VPD max ${metrics.vpdMaxKpa} kPa | FAO ET0 ${metrics.et0Mm} mm/day`),
-    appendSignal("Water context", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm`),
-    appendSignal("Rain intensity", `${metrics.precipitationMm} mm/day | ${metrics.precipitation1hMaxMm} mm max in 1 hour`),
+    appendSignal("Measured check", observationText(metrics)),
+    appendSignal("Ensemble dispersion", ensembleText(metrics)),
+    appendSignal("UFZ percentile baseline", ufzText(metrics)),
+    appendSignal("Plant-water baseline", `${Number.isFinite(metrics.ufzPlantAvailableWaterPct) ? `UFZ ${metrics.ufzPlantAvailableWaterPct}% nFK | ` : ""}${fieldSignal}`),
+    appendSignal("Water forecast", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm | ET0 ${metrics.et0Mm} mm/day`),
+    appendSignal("RADOLAN baseline", radolanText(metrics)),
     appendSignal("Water screening", `dry ${metrics.dryStressScore}/100 | excess water ${metrics.wetStressScore}/100`),
-    appendSignal("Persistence", `heat ${metrics.heatPersistenceDays} day${metrics.heatPersistenceDays === 1 ? "" : "s"} | dry ${metrics.dryPersistenceDays} day${metrics.dryPersistenceDays === 1 ? "" : "s"}`),
-    appendSignal("Data quality", `${metrics.completeness}% source completeness | ${metrics.spatialCoverage}% exact spatial overlap`),
-    appendSignal("Impact assumptions", `urban/rural exposure ${metrics.exposure}/100 | crop sensitivity ${metrics.cropSensitivity}/100`)
+    appendSignal("Evidence quality", `${confidence.score}/100 ${confidence.label.toLowerCase()} | ${metrics.completeness}% forcing completeness | ${metrics.spatialCoverage}% exact overlap`)
   );
-  const actions = state.freshness.stale ? [] : guidance.actions;
+  const historicalInterpretation = [
+    {
+      category: "Retrospective",
+      text: `${formatDate(state.date)} is a historical screening reconstruction. It describes the dated heat and soil-water signals shown above; it is not current action guidance.`
+    },
+    {
+      category: "Validate",
+      text: "Compare the dated DWD station and RADOLAN observations with archived official warnings, local measurements, and recorded outcomes before drawing conclusions."
+    }
+  ];
+  elements.actionHeadingLabel.textContent = isRetrospective ? "Historical interpretation" : "Suggested next actions";
+  const actions = isRetrospective
+    ? historicalInterpretation
+    : state.freshness.stale
+      ? []
+      : guidance.actions;
   elements.actionList.replaceChildren(...actions.map((action) => {
     const item = document.createElement("li");
     const category = document.createElement("strong");
@@ -762,9 +954,13 @@ function renderDetails() {
     item.append(category, text);
     return item;
   }));
-  elements.confidence.textContent = `${metrics.completeness}% source completeness`;
-  elements.decisionNote.textContent = state.freshness.stale
-    ? "Suggested actions are suppressed because the last valid source snapshot is stale. Check DWD and local official channels."
+  elements.confidence.textContent = `${confidence.label} ${confidence.score}/100`;
+  elements.decisionNote.textContent = isRetrospective
+    ? "Historical views support review and model evaluation only. They must not be read as present-day resident, farm, or municipal instructions; the current DWD feed is not a warning archive."
+    : state.freshness.stale
+    ? state.freshness.sourceStale
+      ? `Suggested actions are suppressed because ${staleSourceNames()} exceeded the runtime freshness limit. Check current official and local sources.`
+      : "Suggested actions are suppressed because the last valid source snapshot is stale. Check DWD and local official channels."
     : guidance.note;
   renderTrend(unit);
 }
@@ -781,6 +977,7 @@ function renderResolutionNote() {
 
 function renderAll() {
   if (!state.ready) return;
+  updateOperationalFreshness();
   validateSelection();
   renderControls();
   renderSummary();
@@ -846,9 +1043,12 @@ async function loadApplication() {
     state.availableDates = [...state.liveData.forecast.dates];
     const currentForecastDate = state.availableDates[Math.min(state.liveData.forecast.pastDays || 0, state.availableDates.length - 1)];
     state.date = resolveForecastDate(state.date, state.availableDates, currentForecastDate);
-    state.freshness = freshnessStatus(state.liveData.generatedAt);
+    updateOperationalFreshness();
     state.liveData.basins.forEach((basin) => {
-      state.liveByBasin.set(String(basin.id), new Map(basin.days.map((day) => [day.date, day])));
+      state.liveByBasin.set(String(basin.id), new Map(basin.days.map((day) => [
+        day.date,
+        { ...basin.context, ...day }
+      ])));
     });
     state.d3 = d3;
     assignSpatialHierarchy();
@@ -899,7 +1099,12 @@ function currentSnapshot() {
       date: state.date,
       spatialLevel: state.level,
       decisionLens: state.audience,
-      riskLayer: state.layer
+      riskLayer: state.layer,
+      fieldContext: {
+        crop: state.crop,
+        stage: state.stage,
+        soil: state.soil
+      }
     },
     region: { id: unit.id, name: featureName(unit.feature, unit.level), level: unit.level },
     risk: { score, severity: severity(score).label, metrics },
@@ -965,6 +1170,20 @@ document.querySelectorAll("[data-layer]").forEach((button) => {
   });
 });
 
+[
+  [elements.cropSelect, "crop", FIELD_CONTEXTS.crops],
+  [elements.stageSelect, "stage", FIELD_CONTEXTS.stages],
+  [elements.soilSelect, "soil", FIELD_CONTEXTS.soils]
+].forEach(([select, key, options]) => {
+  select.addEventListener("change", () => {
+    if (Object.hasOwn(options, select.value)) {
+      state[key] = select.value;
+      state.metricCache.clear();
+      renderAll();
+    }
+  });
+});
+
 elements.dateInput.addEventListener("change", () => {
   if (state.availableDates.includes(elements.dateInput.value)) {
     state.date = elements.dateInput.value;
@@ -1015,5 +1234,16 @@ window.addEventListener("popstate", () => {
     renderAll();
   }
 });
+
+window.setInterval(() => {
+  if (!state.ready) return;
+  const previousStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
+  updateOperationalFreshness();
+  const nextStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
+  if (previousStatus !== nextStatus) {
+    renderSummary();
+    renderDetails();
+  }
+}, 60_000);
 
 loadApplication();

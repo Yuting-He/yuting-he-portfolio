@@ -311,6 +311,27 @@ h1 {
   font-size: 11px;
 }
 
+.field-context {
+  grid-column: 1 / -1;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.field-context-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field-context-controls label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .control-buttons,
 .date-controls {
   display: flex;
@@ -365,13 +386,23 @@ h1 {
 }
 
 #forecast-date,
-#region-select {
+#region-select,
+.field-context-controls select {
   min-height: 36px;
   padding: 6px 9px;
   color: var(--ink);
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 6px;
+}
+
+.field-context-controls select {
+  width: 100%;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: none;
 }
 
 .map-layout {
@@ -1002,7 +1033,8 @@ footer p {
   .utility-button,
   .retry-button,
   #forecast-date,
-  #region-select {
+  #region-select,
+  .field-context-controls select {
     min-height: 44px;
   }
 
@@ -1012,6 +1044,10 @@ footer p {
   .workbench-toolbar {
     grid-template-columns: 1fr;
     gap: 16px;
+  }
+
+  .field-context-controls {
+    grid-template-columns: 1fr;
   }
 
   .map-stage-heading,

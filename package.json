@@ -1,8 +1,8 @@
 {
   "name": "yuting-he-portfolio",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
-  "description": "Portfolio and HeatLens Germany role-specific heat, dry, and excess-water decision-support application.",
+  "description": "Portfolio and HeatLens Germany observed, probabilistic, role-specific heat and soil-water decision-support application.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -16,5 +16,9 @@
     "serve": "node ./scripts/serve.mjs",
     "refresh-data": "node ./scripts/fetch-live-data.mjs",
     "test": "node --test ./tests/*.test.mjs"
+  },
+  "dependencies": {
+    "h5wasm": "^0.10.3",
+    "proj4": "^2.19.10"
   }
 }

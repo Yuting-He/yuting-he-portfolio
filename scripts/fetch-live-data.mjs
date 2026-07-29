@@ -1,18 +1,48 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { DWD_STATION_URLS, fetchDwdTemperatureContext } from "./dwd-stations.mjs";
+import { fetchGridContexts, GRID_SOURCE_URLS } from "./grid-sources.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASIN_PATH = resolve(ROOT, "assets/hydrobasins-de-level8.geojson");
 const OUTPUT_PATH = resolve(ROOT, "assets/live/forecast.json");
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/dwd-icon";
+const OPEN_METEO_ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble";
 const DWD_WARNINGS_URL = "https://www.dwd.de/DWD/warnungen/warnapp/json/warnings.json";
-const USER_AGENT = "HeatLensGermany/0.6 (+https://github.com/Yuting-He/yuting-he-portfolio)";
+const USER_AGENT = "HeatLensGermany/0.7 (+https://github.com/Yuting-He/yuting-he-portfolio)";
 const BATCH_SIZE = Number(process.env.HEATLENS_BATCH_SIZE || 100);
 const REQUEST_DELAY_MS = Number(process.env.HEATLENS_REQUEST_DELAY_MS || 11_000);
 const CONTEXT_PAST_DAYS = 4;
 const DISPLAY_PAST_DAYS = 2;
 const FORECAST_DAYS = 7;
+export const SOURCE_FRESHNESS_LIMIT_HOURS = Object.freeze({
+  radolan: 8,
+  dwdTemperature: 8,
+  ufz: 96,
+  dwdSoil: 96
+});
+const ENSEMBLE_FIELDS = [
+  "temperature_2m",
+  "temperature_2m_spread",
+  "precipitation",
+  "precipitation_spread"
+];
+const ENSEMBLE_DAILY_FIELDS = ["temperature_2m_max", "precipitation_sum"];
+const ENSEMBLE_MODELS = Object.freeze({
+  d2: {
+    apiName: "dwd_icon_d2_eps_ensemble_mean",
+    label: "DWD ICON-D2-EPS",
+    members: 20,
+    forecastDays: 2
+  },
+  seamless: {
+    apiName: "dwd_icon_eps_ensemble_mean_seamless",
+    label: "DWD ICON-EU-EPS / ICON-EPS seamless",
+    members: 40,
+    forecastDays: FORECAST_DAYS
+  }
+});
 
 const DAILY_FIELDS = [
   "temperature_2m_max",
@@ -76,7 +106,7 @@ export function geometryCentroid(geometry) {
   ];
 }
 
-async function fetchWithRetry(url, attempts = 5) {
+export async function fetchWithRetry(url, attempts = 5) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
@@ -112,6 +142,18 @@ function buildForecastUrl(batch) {
   url.searchParams.set("timezone", "Europe/Berlin");
   url.searchParams.set("past_days", String(CONTEXT_PAST_DAYS));
   url.searchParams.set("forecast_days", String(FORECAST_DAYS));
+  return url;
+}
+
+function buildEnsembleUrl(batch, model) {
+  const url = new URL(OPEN_METEO_ENSEMBLE_URL);
+  url.searchParams.set("latitude", batch.map((item) => item.latitude.toFixed(5)).join(","));
+  url.searchParams.set("longitude", batch.map((item) => item.longitude.toFixed(5)).join(","));
+  url.searchParams.set("models", model.apiName);
+  url.searchParams.set("hourly", ENSEMBLE_FIELDS.join(","));
+  url.searchParams.set("daily", ENSEMBLE_DAILY_FIELDS.join(","));
+  url.searchParams.set("timezone", "Europe/Berlin");
+  url.searchParams.set("forecast_days", String(model.forecastDays));
   return url;
 }
 
@@ -185,6 +227,50 @@ export function summarizeForecastResponse(response, { trimContextDays = 0 } = {}
   return days.slice(trimContextDays);
 }
 
+export function summarizeEnsembleResponse(response, model) {
+  const hourlyByDate = new Map();
+  (response.hourly?.time || []).forEach((time, index) => {
+    const date = time.slice(0, 10);
+    if (!hourlyByDate.has(date)) hourlyByDate.set(date, []);
+    hourlyByDate.get(date).push({
+      temperatureMeanC: response.hourly.temperature_2m?.[index],
+      temperatureSpreadC: response.hourly.temperature_2m_spread?.[index],
+      precipitationMeanMm: response.hourly.precipitation?.[index],
+      precipitationSpreadMm: response.hourly.precipitation_spread?.[index]
+    });
+  });
+  return (response.daily?.time || []).map((date, index) => {
+    const hours = hourlyByDate.get(date) || [];
+    const peakTemperatureHour = hours
+      .filter((hour) => finite(hour.temperatureMeanC))
+      .sort((left, right) => right.temperatureMeanC - left.temperatureMeanC)[0];
+    const precipitationSpreads = hours.map((hour) => hour.precipitationSpreadMm).filter(finite);
+    const values = {
+      ensembleDailyTmaxMeanC: response.daily.temperature_2m_max?.[index],
+      ensemblePeakHourTemperatureSdC: peakTemperatureHour?.temperatureSpreadC,
+      ensembleDailyPrecipitationMeanMm: response.daily.precipitation_sum?.[index],
+      ensembleMaxHourlyPrecipitationSdMm: precipitationSpreads.length ? Math.max(...precipitationSpreads) : null
+    };
+    const available = Object.values(values).filter(finite).length;
+    return {
+      date,
+      ensembleModel: model.label,
+      ensembleMemberCount: model.members,
+      ensembleDailyTmaxMeanC: finite(values.ensembleDailyTmaxMeanC) ? round(values.ensembleDailyTmaxMeanC) : null,
+      ensemblePeakHourTemperatureSdC: finite(values.ensemblePeakHourTemperatureSdC)
+        ? round(values.ensemblePeakHourTemperatureSdC, 2)
+        : null,
+      ensembleDailyPrecipitationMeanMm: finite(values.ensembleDailyPrecipitationMeanMm)
+        ? round(values.ensembleDailyPrecipitationMeanMm)
+        : null,
+      ensembleMaxHourlyPrecipitationSdMm: finite(values.ensembleMaxHourlyPrecipitationSdMm)
+        ? round(values.ensembleMaxHourlyPrecipitationSdMm, 2)
+        : null,
+      ensembleCompleteness: Math.round(available / 4 * 100)
+    };
+  });
+}
+
 async function fetchForecastBatch(batch) {
   const response = await fetchWithRetry(buildForecastUrl(batch));
   const payload = await response.json();
@@ -196,6 +282,30 @@ async function fetchForecastBatch(batch) {
     longitude: round(location.longitude, 4),
     elevationM: finite(location.elevation) ? round(location.elevation, 0) : null,
     days: summarizeForecastResponse(location, { trimContextDays: CONTEXT_PAST_DAYS - DISPLAY_PAST_DAYS })
+  }));
+}
+
+async function fetchEnsembleBatch(batch, model) {
+  const response = await fetchWithRetry(buildEnsembleUrl(batch, model));
+  const payload = await response.json();
+  const locations = Array.isArray(payload) ? payload : [payload];
+  if (locations.length !== batch.length) {
+    throw new Error(`Expected ${batch.length} ${model.label} locations, received ${locations.length}`);
+  }
+  return locations.map((location, index) => ({
+    id: batch[index].id,
+    days: summarizeEnsembleResponse(location, model)
+  }));
+}
+
+function mergeEnsembleDays(d2, seamless) {
+  const d2ByDate = new Map((d2 || []).map((day) => [day.date, day]));
+  const seamlessByDate = new Map((seamless || []).map((day) => [day.date, day]));
+  return new Map([...new Set([...d2ByDate.keys(), ...seamlessByDate.keys()])].map((date) => {
+    const d2Day = d2ByDate.get(date);
+    const seamlessDay = seamlessByDate.get(date);
+    const selected = d2Day?.ensembleCompleteness >= 75 ? d2Day : seamlessDay;
+    return [date, selected || null];
   }));
 }
 
@@ -243,8 +353,31 @@ export function parseDwdWarnings(text) {
   };
 }
 
+function ageHours(generatedAt, validAt) {
+  return (Date.parse(generatedAt) - Date.parse(validAt)) / 3_600_000;
+}
+
+export function sourceFreshnessAt(dataset) {
+  const sourceTimes = {
+    radolan: dataset.observations?.radolan?.periodEnd,
+    dwdTemperature: dataset.observations?.dwdTemperature?.observedAt,
+    ufz: dataset.soilMoisture?.ufz?.validAt,
+    dwdSoil: dataset.soilMoisture?.dwd?.validAt
+  };
+  return Object.fromEntries(Object.entries(sourceTimes).map(([source, validAt]) => {
+    const sourceAgeHours = ageHours(dataset.generatedAt, validAt);
+    return [source, {
+      validAt,
+      ageHoursAtGeneration: finite(sourceAgeHours) ? round(sourceAgeHours, 1) : null,
+      maximumAgeHours: SOURCE_FRESHNESS_LIMIT_HOURS[source],
+      current: finite(sourceAgeHours) && sourceAgeHours >= -2 &&
+        sourceAgeHours <= SOURCE_FRESHNESS_LIMIT_HOURS[source]
+    }];
+  }));
+}
+
 export function validateLiveDataset(dataset, expectedBasinCount = 614) {
-  if (dataset.schema !== "heatlens-live/v1") throw new Error("Unexpected live-data schema");
+  if (dataset.schema !== "heatlens-live/v3") throw new Error("Unexpected live-data schema");
   const dates = dataset.forecast?.dates;
   if (!Array.isArray(dates) || dates.length !== DISPLAY_PAST_DAYS + FORECAST_DAYS) {
     throw new Error("Unexpected forecast date window");
@@ -253,13 +386,31 @@ export function validateLiveDataset(dataset, expectedBasinCount = 614) {
     throw new Error(`Expected ${expectedBasinCount} basins`);
   }
   const ids = new Set();
+  const sourceCoverage = {
+    radolan: 0,
+    ufz: 0,
+    dwdSoil: 0,
+    dwdTemperature: 0
+  };
   for (const basin of dataset.basins) {
     if (ids.has(basin.id)) throw new Error(`Duplicate basin ${basin.id}`);
     ids.add(basin.id);
     if (!Array.isArray(basin.days) || basin.days.map((day) => day.date).join() !== dates.join()) {
       throw new Error(`Date window mismatch for basin ${basin.id}`);
     }
-    for (const day of basin.days) {
+    if (finite(basin.context?.radolanPrecipitation24hMm)) sourceCoverage.radolan += 1;
+    if ([basin.context?.ufzTopsoilSmi, basin.context?.ufzTotalSmi, basin.context?.ufzPlantAvailableWaterPct].every(finite)) {
+      sourceCoverage.ufz += 1;
+    }
+    if ([basin.context?.dwdNfkDominantPct, basin.context?.dwdNfkGrassPct,
+      basin.context?.dwdNfkMaizePct, basin.context?.dwdNfkWinterWheatPct].every(finite)) {
+      sourceCoverage.dwdSoil += 1;
+    }
+    if (finite(basin.context?.dwdLatestTemperatureC) && finite(basin.context?.dwdStationDistanceKm)) {
+      sourceCoverage.dwdTemperature += 1;
+    }
+    for (let index = 0; index < basin.days.length; index += 1) {
+      const day = basin.days[index];
       const values = [
         day.tmaxC, day.tminC, day.apparentMaxC, day.precipitationMm, day.precipitation1hMaxMm, day.et0Mm,
         day.vpdMaxKpa, day.soilMoistureM3M3, day.heatPersistenceDays,
@@ -268,8 +419,35 @@ export function validateLiveDataset(dataset, expectedBasinCount = 614) {
       if (!values.every(finite) || day.completeness < 85) {
         throw new Error(`Incomplete forecast values for basin ${basin.id} on ${day.date}`);
       }
+      if (index >= DISPLAY_PAST_DAYS) {
+        const ensembleValues = [
+          day.ensembleDailyTmaxMeanC,
+          day.ensemblePeakHourTemperatureSdC,
+          day.ensembleDailyPrecipitationMeanMm,
+          day.ensembleMaxHourlyPrecipitationSdMm,
+          day.ensembleMemberCount
+        ];
+        if (!ensembleValues.every(finite) || day.ensembleCompleteness < 75) {
+          throw new Error(`Incomplete ICON ensemble values for basin ${basin.id} on ${day.date}`);
+        }
+      }
     }
   }
+  for (const [source, count] of Object.entries(sourceCoverage)) {
+    if (count / expectedBasinCount < 0.9) {
+      throw new Error(`${source} covers only ${count} of ${expectedBasinCount} basins`);
+    }
+  }
+  const freshness = sourceFreshnessAt(dataset);
+  for (const [source, status] of Object.entries(freshness)) {
+    if (!status.current) {
+      throw new Error(`${source} source time is outside the ${status.maximumAgeHours}-hour freshness policy`);
+    }
+  }
+  dataset.sourceFreshness = {
+    policyVersion: "2026-07",
+    sources: freshness
+  };
   return dataset;
 }
 
@@ -299,27 +477,101 @@ export async function buildLiveDataset() {
   for (let index = 0; index < basinLocations.length; index += BATCH_SIZE) {
     batches.push(basinLocations.slice(index, index + BATCH_SIZE));
   }
-  const batchResults = [];
+  const contextPromise = Promise.all([
+    fetchGridContexts(basinLocations, fetchWithRetry),
+    fetchDwdTemperatureContext(basinLocations, fetchWithRetry),
+    fetchDwdWarnings()
+  ]);
+  const forecastResults = [];
+  const d2Results = [];
+  const seamlessResults = [];
   for (let index = 0; index < batches.length; index += 1) {
-    batchResults.push(await fetchForecastBatch(batches[index]));
+    const [forecast, d2, seamless] = await Promise.all([
+      fetchForecastBatch(batches[index]),
+      fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.d2),
+      fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.seamless)
+    ]);
+    forecastResults.push(forecast);
+    d2Results.push(d2);
+    seamlessResults.push(seamless);
     if (index < batches.length - 1) await sleep(REQUEST_DELAY_MS);
   }
-  const basins = batchResults.flat();
+  const basins = forecastResults.flat();
+  const d2ById = new Map(d2Results.flat().map((basin) => [basin.id, basin.days]));
+  const seamlessById = new Map(seamlessResults.flat().map((basin) => [basin.id, basin.days]));
+  const [gridContexts, temperatureContext, warnings] = await contextPromise;
+  const ufzValidDate = gridContexts.ufz.validAt.slice(0, 10);
+  const dwdSoilValidDate = gridContexts.dwdSoil.validAt.slice(0, 10);
   const dates = basins[0]?.days.map((day) => day.date) || [];
   if (basins.length !== basinLocations.length || !dates.length) throw new Error("Incomplete forecast dataset");
   if (basins.some((basin) => basin.days.map((day) => day.date).join() !== dates.join())) {
     throw new Error("Forecast date windows differ between basins");
   }
+  const contextualBasins = basins.map((basin) => {
+    const ufz = gridContexts.ufz.basins.get(basin.id) || {};
+    const dwdSoil = gridContexts.dwdSoil.basins.get(basin.id) || {};
+    const radolan = gridContexts.radolan.basins.get(basin.id) || {};
+    const temperature = temperatureContext.basins.get(basin.id) || {};
+    const ensembleByDate = mergeEnsembleDays(d2ById.get(basin.id), seamlessById.get(basin.id));
+    return {
+      ...basin,
+      context: {
+        ...ufz,
+        ...dwdSoil,
+        ...radolan,
+        ...temperature
+      },
+      days: basin.days.map((day) => {
+        const ensemble = ensembleByDate.get(day.date);
+        const useUfzBaseline = day.date >= ufzValidDate;
+        const useDwdSoilBaseline = day.date >= dwdSoilValidDate;
+        const useLatestObservations = day.date >= temperature.dwdCurrentDayDate;
+        const observedTmaxC = day.date === temperature.dwdPreviousDayDate
+          ? temperature.dwdPreviousDayMaxC
+          : day.date === temperature.dwdCurrentDayDate
+            ? temperature.dwdCurrentDayMaxSoFarC
+            : null;
+        const datedDwdSoil = Object.fromEntries(
+          Object.entries(dwdSoil)
+            .filter(([key]) => key.startsWith("dwdNfk"))
+            .map(([key, value]) => [key, useDwdSoilBaseline ? value : null])
+        );
+        return {
+          ...day,
+          ufzTopsoilSmi: useUfzBaseline ? ufz.ufzTopsoilSmi : null,
+          ufzTotalSmi: useUfzBaseline ? ufz.ufzTotalSmi : null,
+          ufzPlantAvailableWaterPct: useUfzBaseline ? ufz.ufzPlantAvailableWaterPct : null,
+          ufzCellDistanceKm: useUfzBaseline ? ufz.ufzCellDistanceKm : null,
+          ...datedDwdSoil,
+          dwdSoilCellDistanceKm: useDwdSoilBaseline ? dwdSoil.dwdSoilCellDistanceKm : null,
+          radolanPrecipitation24hMm: useLatestObservations ? radolan.radolanPrecipitation24hMm : null,
+          dwdLatestTemperatureC: useLatestObservations ? temperature.dwdLatestTemperatureC : null,
+          ensembleModel: ensemble?.ensembleModel || null,
+          ensembleMemberCount: ensemble?.ensembleMemberCount ?? null,
+          ensembleDailyTmaxMeanC: ensemble?.ensembleDailyTmaxMeanC ?? null,
+          ensemblePeakHourTemperatureSdC: ensemble?.ensemblePeakHourTemperatureSdC ?? null,
+          ensembleDailyPrecipitationMeanMm: ensemble?.ensembleDailyPrecipitationMeanMm ?? null,
+          ensembleMaxHourlyPrecipitationSdMm: ensemble?.ensembleMaxHourlyPrecipitationSdMm ?? null,
+          ensembleCompleteness: ensemble?.ensembleCompleteness ?? null,
+          dwdObservedTmaxC: observedTmaxC,
+          dwdObservationKind: day.date === temperature.dwdPreviousDayDate
+            ? "complete-day"
+            : day.date === temperature.dwdCurrentDayDate ? "day-so-far" : null
+        };
+      })
+    };
+  });
   return validateLiveDataset({
-    schema: "heatlens-live/v1",
+    schema: "heatlens-live/v3",
     generatedAt: new Date().toISOString(),
     forecast: {
-      provider: "Open-Meteo DWD ICON API",
-      sourceModel: "DWD ICON seamless",
+      provider: "Open-Meteo DWD ICON and Ensemble APIs",
+      sourceModel: "DWD ICON seamless + ICON-D2/EU/Global EPS",
       sourceUrl: "https://open-meteo.com/en/docs/dwd-api",
+      ensembleSourceUrl: "https://open-meteo.com/en/docs/ensemble-mean-api",
       timezone: "Europe/Berlin",
       dates,
-      basinCount: basins.length,
+      basinCount: contextualBasins.length,
       pastDays: DISPLAY_PAST_DAYS,
       contextPastDays: CONTEXT_PAST_DAYS,
       forecastDays: FORECAST_DAYS,
@@ -329,11 +581,50 @@ export async function buildLiveDataset() {
         vapourPressureDeficit: "hourly maximum (kPa)",
         soilMoisture: "3-81 cm depth-weighted daily model mean (m3/m3)",
         precipitation: "daily sum and hourly maximum (mm)",
-        referenceEvapotranspiration: "FAO ET0 daily sum (mm)"
+        referenceEvapotranspiration: "FAO ET0 daily sum (mm)",
+        ensemble: "ICON-D2-EPS near term, then ICON-EU-EPS / ICON-EPS seamless; daily ensemble means plus hourly member standard deviations"
       }
     },
-    warnings: await fetchDwdWarnings(),
-    basins
+    observations: {
+      radolan: {
+        status: gridContexts.radolan.status,
+        periodStart: gridContexts.radolan.periodStart,
+        periodEnd: gridContexts.radolan.periodEnd,
+        resolutionKm: gridContexts.radolan.resolutionKm,
+        sourceUrl: GRID_SOURCE_URLS.radolan,
+        variable: "gauge-adjusted rolling 24-hour precipitation (mm)"
+      },
+      dwdTemperature: {
+        status: temperatureContext.status,
+        observedAt: temperatureContext.observedAt,
+        stationCount: temperatureContext.stationCount,
+        requestedStationCount: temperatureContext.requestedStationCount,
+        sourceUrl: DWD_STATION_URLS.poiIndex,
+        variable: "2 m air temperature and previous-day maximum"
+      }
+    },
+    soilMoisture: {
+      ufz: {
+        status: gridContexts.ufz.status,
+        validAt: gridContexts.ufz.validAt,
+        resolutionKm: gridContexts.ufz.resolutionKm,
+        sourceUrl: "https://www.ufz.de/index.php?de=37937",
+        variables: "topsoil SMI, total-soil SMI, and 0-25 cm plant-available water"
+      },
+      dwd: {
+        status: gridContexts.dwdSoil.status,
+        validAt: gridContexts.dwdSoil.validAt,
+        rootZoneDepthsCm: gridContexts.dwdSoil.rootZoneDepthsCm,
+        resolutionKm: gridContexts.dwdSoil.resolutionKm,
+        sourceUrl: "https://www.dwd.de/bodenfeuchteviewer",
+        wcsUrl: GRID_SOURCE_URLS.dwdSoilWcs,
+        variables: "AMBAV 2.0 soil moisture as percent of plant-available field capacity for local BUEK1000 soil and four land-use/crop profiles, averaged to 30/60/90 cm",
+        percentileReferencePeriod: "1991-2020",
+        percentileReferenceOnly: true
+      }
+    },
+    warnings,
+    basins: contextualBasins
   });
 }
 
@@ -343,7 +634,11 @@ async function main() {
   const temporaryPath = `${OUTPUT_PATH}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(dataset)}\n`, "utf8");
   await rename(temporaryPath, OUTPUT_PATH);
-  console.log(`Wrote ${dataset.basins.length} basins x ${dataset.forecast.dates.length} days; DWD warnings ${dataset.warnings.status}`);
+  console.log(
+    `Wrote ${dataset.basins.length} basins x ${dataset.forecast.dates.length} days; ` +
+    `RADOLAN ${dataset.observations.radolan.status}; UFZ ${dataset.soilMoisture.ufz.status}; ` +
+    `DWD stations ${dataset.observations.dwdTemperature.stationCount}; warnings ${dataset.warnings.status}`
+  );
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

@@ -1,4 +1,4 @@
-import { AUDIENCES, LAYERS, isIsoDate } from "./heatwave-model.js";
+import { AUDIENCES, FIELD_CONTEXTS, LAYERS, isIsoDate } from "./heatwave-model.js";
 
 const LEVELS = new Set(["state", "district", "basin"]);
 
@@ -7,6 +7,9 @@ export const DEFAULT_VIEW = Object.freeze({
   level: "state",
   audience: "residents",
   layer: "impact",
+  crop: "dominant",
+  stage: "vegetative",
+  soil: "local",
   selectedState: "DE2",
   selectedDistrict: null,
   selectedBasin: null
@@ -24,11 +27,17 @@ export function parseViewState(search = "") {
   const date = params.get("date");
   const level = params.get("level");
   const audience = params.get("audience");
+  const crop = params.get("crop");
+  const stage = params.get("stage");
+  const soil = params.get("soil");
   return {
     date: isIsoDate(date) ? date : DEFAULT_VIEW.date,
     level: LEVELS.has(level) ? level : DEFAULT_VIEW.level,
     audience: Object.hasOwn(AUDIENCES, audience) ? audience : DEFAULT_VIEW.audience,
     layer: Object.hasOwn(LAYERS, requestedLayer) ? requestedLayer : DEFAULT_VIEW.layer,
+    crop: Object.hasOwn(FIELD_CONTEXTS.crops, crop) ? crop : DEFAULT_VIEW.crop,
+    stage: Object.hasOwn(FIELD_CONTEXTS.stages, stage) ? stage : DEFAULT_VIEW.stage,
+    soil: Object.hasOwn(FIELD_CONTEXTS.soils, soil) ? soil : DEFAULT_VIEW.soil,
     selectedState: optionalId(params, "state", /^DE[A-Z0-9]$/) || DEFAULT_VIEW.selectedState,
     selectedDistrict: optionalId(params, "district", /^DE[A-Z0-9]{3}$/),
     selectedBasin: optionalId(params, "basin", /^\d+$/)
@@ -49,11 +58,65 @@ export function resolveForecastDate(requestedDate, dates, fallbackDate = dates?.
   }, dates[0]);
 }
 
+export function runtimeSourceFreshness(sourceFreshness, now = Date.now()) {
+  const sources = sourceFreshness?.sources || {};
+  const statuses = Object.fromEntries(["radolan", "dwdTemperature", "ufz", "dwdSoil"].map((source) => {
+    const policy = sources[source];
+    const ageHours = (now - Date.parse(policy?.validAt)) / 3_600_000;
+    const current = Number.isFinite(ageHours) &&
+      Number.isFinite(policy?.maximumAgeHours) &&
+      ageHours >= -2 &&
+      ageHours <= policy.maximumAgeHours;
+    return [source, {
+      ageHours: Number.isFinite(ageHours) ? ageHours : null,
+      current,
+      maximumAgeHours: policy?.maximumAgeHours ?? null,
+      validAt: policy?.validAt ?? null
+    }];
+  }));
+  return {
+    sources: statuses,
+    staleSources: Object.entries(statuses)
+      .filter(([, status]) => !status.current)
+      .map(([source]) => source),
+    stale: Object.values(statuses).some((status) => !status.current)
+  };
+}
+
+function berlinIsoDate(timestamp) {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Europe/Berlin",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date(timestamp));
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+export function warningAppliesToDate(warning, date) {
+  if (!isIsoDate(date) || !Number.isFinite(Date.parse(warning?.start)) || !Number.isFinite(Date.parse(warning?.end))) {
+    return false;
+  }
+  const inclusiveEnd = new Date(Date.parse(warning.end) - 1).toISOString();
+  return berlinIsoDate(warning.start) <= date && berlinIsoDate(inclusiveEnd) >= date;
+}
+
+export function isRetrospectiveDate(selectedDate, currentModelDate) {
+  if (!isIsoDate(selectedDate) || !isIsoDate(currentModelDate)) {
+    throw new TypeError("Retrospective comparison requires ISO dates");
+  }
+  return selectedDate < currentModelDate;
+}
+
 export function serializeViewState(view) {
   const params = new URLSearchParams({
     level: view.level,
     audience: view.audience,
     layer: view.layer,
+    crop: view.crop,
+    stage: view.stage,
+    soil: view.soil,
     state: view.selectedState
   });
   if (view.date) params.set("date", view.date);

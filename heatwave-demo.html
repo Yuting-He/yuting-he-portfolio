@@ -34,8 +34,8 @@
           <p class="kicker">From hazard signal to role-specific action</p>
           <h1 id="demo-title">HeatLens Germany</h1>
           <p>
-            Official warning context and live basin heat, dry, and excess-water signals are translated into staged,
-            low-regret checks for residents, farms, and municipalities. HeatLens supports decisions; it does not reissue warnings.
+            Official warnings, measured DWD/RADOLAN checks, soil-water percentiles, and ICON ensemble-member dispersion are translated into
+            staged, low-regret checks for residents, farms, and municipalities. HeatLens supports decisions; it does not reissue warnings.
           </p>
         </div>
         <div class="scenario-context" aria-label="Model architecture">
@@ -106,6 +106,39 @@
               <button class="control-button" type="button" data-layer="dry" aria-pressed="false">Dry stress</button>
               <button class="control-button" type="button" data-layer="wet" aria-pressed="false">Excess water</button>
             </div>
+          </fieldset>
+          <fieldset class="control-group field-context" id="field-context" hidden>
+            <legend>Field context</legend>
+            <div class="field-context-controls">
+              <label for="crop-profile">
+                Crop
+                <select id="crop-profile">
+                  <option value="dominant">Local dominant land use</option>
+                  <option value="grass">Grassland</option>
+                  <option value="maize">Maize</option>
+                  <option value="winterWheat">Winter wheat</option>
+                </select>
+              </label>
+              <label for="crop-stage">
+                Growth stage
+                <select id="crop-stage">
+                  <option value="establishment">Establishment</option>
+                  <option value="vegetative">Vegetative</option>
+                  <option value="flowering">Flowering / yield formation</option>
+                  <option value="maturity">Maturity</option>
+                </select>
+              </label>
+              <label for="soil-profile">
+                Soil profile
+                <select id="soil-profile">
+                  <option value="local">DWD / BUEK local profile</option>
+                  <option value="sand">Sandy override</option>
+                  <option value="loam">Loamy override</option>
+                  <option value="clay">Clayey override</option>
+                </select>
+              </label>
+            </div>
+            <span class="control-note">DWD AMBAV values use the local BUEK1000 profile; overrides are scenarios, not mapped observations.</span>
           </fieldset>
         </div>
 
@@ -181,15 +214,15 @@
             </section>
             <div class="action-block">
               <div class="action-heading">
-                <p class="section-label">Suggested next actions</p>
+                <p class="section-label" id="action-heading-label">Suggested next actions</p>
                 <span id="confidence-label"></span>
               </div>
               <ol id="action-list"></ol>
             </div>
             <p class="decision-note" id="decision-note"></p>
             <dl class="provenance-list" aria-label="Data provenance">
-              <div><dt>Index model</dt><dd id="model-version">v0.6.0-decision</dd></div>
-              <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON seamless</dd></div>
+              <div><dt>Index model</dt><dd id="model-version">v0.7.0-observed-eps</dd></div>
+              <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON + ICON-EPS</dd></div>
               <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>
               <div><dt>Operational status</dt><dd id="operational-status">Screening only</dd></div>
             </dl>
@@ -208,18 +241,18 @@
           <div class="method-grid">
             <article>
               <span>01</span>
-              <h3>Screen both sides of water stress</h3>
-              <p>DWD ICON heat, atmospheric demand, root-zone moisture, daily water balance, and hourly rain intensity feed separate dry and excess-water indices for 614 sub-basins.</p>
+              <h3>Anchor forecasts in observed water state</h3>
+              <p>UFZ soil-moisture percentiles, DWD crop-specific nFK, RADOLAN 24-hour rain, and DWD station temperatures provide a dated baseline for 614 sub-basins.</p>
             </article>
             <article>
               <span>02</span>
-              <h3>Aggregate to 400 local regions</h3>
-              <p>Sub-basin predictions are weighted by exact EPSG:3035 intersection area into NUTS-3 districts and urban districts, then rolled up to the 16 states.</p>
+              <h3>Carry uncertainty through local views</h3>
+              <p>ICON-D2-EPS covers the near term; ICON-EU/Global EPS extends the horizon. Daily means and hourly member standard deviations are area-weighted into 400 NUTS-3 regions and 16 states.</p>
             </article>
             <article>
               <span>03</span>
-              <h3>Translate signals into staged checks</h3>
-              <p>Residents, farmers, and municipal teams receive different reversible actions, verification steps, and explicit gates for costly or official decisions.</p>
+              <h3>Apply crop and soil context safely</h3>
+              <p>Farmers can select DWD-supported crops, growth stage, and a soil scenario. The result changes prioritisation and checks, never an automatic irrigation volume or harvest decision.</p>
             </article>
           </div>
         </div>
@@ -244,7 +277,7 @@
                   <td><a href="https://www.hydrosheds.org/products/hydrobasins">HydroBASINS Level 8</a></td>
                   <td>Non-overlapping heat and soil-water prediction units with hydrological topology</td>
                   <td>614 Germany-clipped sub-basins</td>
-                  <td>Bundled geometry; live model fields sampled at basin centroids</td>
+                  <td>Bundled geometry; live source fields sampled at basin centroids</td>
                 </tr>
                 <tr>
                   <td><a href="https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics">Eurostat GISCO NUTS 2024</a></td>
@@ -253,22 +286,28 @@
                   <td>Bundled 1:1M geometry and exact overlap weights</td>
                 </tr>
                 <tr>
-                  <td><a href="https://open-meteo.com/en/docs/dwd-api">Open-Meteo DWD ICON API</a> / <a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html">DWD warnings</a></td>
-                  <td>Temperature, apparent temperature, VPD, hourly and daily precipitation, ET0, soil moisture, and official heat/rain warning context</td>
-                  <td>Two retrospective and seven forecast days; current DWD warning feed</td>
-                  <td>Integrated; scheduled refresh every three hours</td>
+                  <td><a href="https://open-meteo.com/en/docs/dwd-api">DWD ICON</a> / <a href="https://open-meteo.com/en/docs/ensemble-mean-api">ICON ensemble mean</a></td>
+                  <td>Deterministic thermal and water forcing plus daily ensemble means and hourly member standard deviations</td>
+                  <td>ICON-D2-EPS near term; ICON-EU/Global EPS through day seven</td>
+                  <td>Integrated; scheduled refresh every six hours</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.dwd.de/bodenfeuchteviewer">DWD soil moisture</a> / <a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a></td>
-                  <td>Authoritative soil-water monitoring, dry/wet climatological classes, and plant-available-water context</td>
-                  <td>Germany-wide reference services</td>
-                  <td>Linked for verification; not blended into the custom score</td>
+                  <td><a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a> / <a href="https://www.dwd.de/bodenfeuchteviewer">DWD soil moisture</a></td>
+                  <td>Topsoil and total-soil SMI, plant-available water, and AMBAV crop-specific percent nFK using local BÜK1000 soils</td>
+                  <td>UFZ 4 km percentile grid; DWD 1 km crop grid averaged to 30, 60, or 90 cm</td>
+                  <td>Machine-ingested with source date and nearest-cell distance</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.hochwasserzentralen.de/">German flood portal</a></td>
-                  <td>Official state flood warnings, gauges, and situation reports</td>
-                  <td>River and state authority context</td>
-                  <td>Linked as the required escalation source; HeatLens does not estimate river-flood probability</td>
+                  <td><a href="https://www.dwd.de/DE/leistungen/radolan/radolan.html">DWD RADOLAN SF</a> / <a href="https://opendata.dwd.de/weather/weather_reports/poi/">DWD POI observations</a></td>
+                  <td>Gauge-adjusted rolling 24-hour radar precipitation and matched-station temperature bias / MAE</td>
+                  <td>1 km rain grid and a distributed network of up to 160 German stations</td>
+                  <td>Machine-ingested; observations remain visibly separate from forecasts</td>
+                </tr>
+                <tr>
+                  <td><a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html">DWD warnings</a> / <a href="https://www.hochwasserzentralen.de/">state flood portals</a></td>
+                  <td>Authoritative heat, heavy-rain, gauge, and river context</td>
+                  <td>Current official services</td>
+                  <td>Displayed separately and never replaced by a HeatLens score</td>
                 </tr>
               </tbody>
             </table>
@@ -277,9 +316,11 @@
             Germany already has mature DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and
             <a href="https://www.dwd.de/DE/leistungen/agrowetter_beregnung/agrobereg.html">specialised agricultural advice</a>.
             HeatLens's role is to connect these services to transparent, role-specific decision checks.
-            Its 0-100 values are uncalibrated screening indices, not probabilities, observations, official warnings, flood forecasts, or agronomic instructions.
+            Its 0-100 values are uncalibrated screening indices, not probabilities, official warnings, flood forecasts, or agronomic instructions.
+            Observations validate and initialise context but do not turn the index into a calibrated forecast.
             HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO).
-            Weather data: Open-Meteo (CC BY 4.0) using DWD ICON. Background map and place labels: &copy; OpenStreetMap contributors.
+            Weather data: Open-Meteo (CC BY 4.0) using DWD ICON and ICON-EPS. Soil and observation data: UFZ and DWD.
+            Background map and place labels: &copy; OpenStreetMap contributors.
           </p>
         </div>
       </section>

@@ -7,7 +7,10 @@ Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applie
 
 ## HeatLens capabilities
 
-- live DWD ICON model fields via the Open-Meteo DWD API
+- live DWD ICON forcing plus ICON-D2/EU/Global daily ensemble means and hourly member standard deviations
+- matched DWD station-temperature bias/MAE and RADOLAN rolling 24-hour precipitation checks
+- UFZ topsoil and total-soil SMI plus plant-available water
+- DWD AMBAV crop-specific nFK using local BÜK1000 soil profiles, averaged from 10 cm layers to 30/60/90 cm
 - separately displayed official DWD heat and heavy/persistent-rain warning context
 - two retrospective and seven forecast dates
 - 614 Germany-clipped HydroBASINS Level 8 prediction units
@@ -15,25 +18,27 @@ Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applie
 - 400 NUTS-3 district / urban-district views and 16 state summaries
 - GISCO 2024 1:1M boundaries over an OpenStreetMap base map
 - resident, farmer, and municipal decision lenses
+- farmer crop, growth-stage, and soil-profile scenarios with explicit irreversible-action gates
 - separate heat, dry-stress, excess-water, and role-specific impact screening layers
 - staged low-regret actions and explicit human-verification gates for residents, farmers, and municipal teams
 - direct escalation links to DWD warnings, the German state flood portals, and the UFZ soil-water monitor
 - shareable URL state and JSON snapshot export
-- freshness, source completeness, and spatial coverage gates
+- per-source freshness, source completeness, spatial coverage, station-distance, and ensemble-dispersion evidence grades
 
 ## Decision boundary
 
 Germany already has DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and specialised agricultural advice. HeatLens does not replace them. Its purpose is to connect authoritative context and basin signals to role-specific, reversible decision checks.
 
-The weather and warning feeds are real, but HeatLens's 0-100 scores are transparent **uncalibrated screening indices**. They are not probabilities, observations, official warnings, flood forecasts, medical advice, or agronomic instructions. Official context is displayed separately and is never blended into the custom score.
+The source feeds are real, but HeatLens's 0-100 scores are transparent **uncalibrated screening indices**. They are not probabilities, official warnings, flood forecasts, medical advice, or agronomic instructions. Observations and official warnings remain visibly identifiable, and costly or irreversible actions always require local verification.
 
 The current impact layer still uses explicit urban/rural exposure and crop-sensitivity assumptions. A snapshot older than 36 hours remains visible for audit, but the application suppresses suggested actions. See [`docs/heatwave-demo-data-plan.md`](docs/heatwave-demo-data-plan.md) for formulas, limitations, governance, and the calibration roadmap.
 
 ## Local development
 
-Node.js 20 or newer is required. No package install is necessary.
+Node.js 20 or newer is required.
 
 ```bash
+npm ci
 npm run serve
 ```
 
@@ -49,7 +54,7 @@ Refresh the live snapshot with internet access:
 npm run refresh-data
 ```
 
-The ingestion job queries coordinates in rate-limited batches, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. GitHub Actions repeats this every three hours. A failed scheduled refresh skips deployment so the last successful Pages release stays online.
+The ingestion job queries forecast and observation sources in rate-limited batches, decodes HDF5 / NetCDF4 grids, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. GitHub Actions repeats this every six hours. A failed scheduled refresh skips deployment so the last successful Pages release stays online.
 
 ## Spatial ETL
 
@@ -67,11 +72,13 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 - `heatwave-model.js` - transparent heat, dry, excess-water, impact, and action-policy model
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
 - `assets/live/forecast.json` - last validated operational snapshot
-- `scripts/fetch-live-data.mjs` - Open-Meteo DWD ICON and DWD warning ingestion
+- `scripts/fetch-live-data.mjs` - coordinated deterministic and ensemble forecast ingestion
+- `scripts/grid-sources.mjs` - UFZ, DWD soil WCS, and RADOLAN HDF5 adapters
+- `scripts/dwd-stations.mjs` - DWD station discovery and temperature-observation adapter
 - `scripts/build_spatial_crosswalk.py` - reproducible exact-area spatial ETL
 - `tests/` - model, live-data, spatial, state, and page-contract checks
-- `.github/workflows/pages.yml` - three-hour refresh, test, and Pages deployment
+- `.github/workflows/pages.yml` - six-hour refresh, test, and Pages deployment
 
 ## License and attribution
 
-Project code is available under the [MIT License](LICENSE). Weather data is attributed to Open-Meteo under CC BY 4.0 and uses DWD ICON model output. Spatial, warning, map-tile, and bundled-library terms are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); original source terms continue to apply.
+Project code is available under the [MIT License](LICENSE). Forecast, observation, soil-water, spatial, warning, map-tile, and bundled-library terms are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); original source terms continue to apply.

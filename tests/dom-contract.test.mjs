@@ -30,6 +30,9 @@ test("interactive page uses bundled map libraries, OSM tiles, and exposes live-d
   assert.match(html, /data-layer="wet"/);
   assert.match(html, /hoch Wasser zentralen|hochwasserzentralen/i);
   assert.match(html, /UFZ soil-water monitor/i);
+  assert.match(html, /id="field-context"/);
+  assert.match(html, /ICON ensemble mean/i);
+  assert.match(html, /RADOLAN SF/i);
   assert.match(html, /HeatLens supports decisions; it does not reissue warnings/i);
   assert.doesNotMatch(html, /data-layer="water"/);
   assert.doesNotMatch(html, /data-layer="drought"/);
@@ -42,6 +45,8 @@ test("GitHub Pages refreshes on schedule and deployment is gated by build tests"
   assert.match(workflow, /run: npm test/);
   assert.match(workflow, /deploy:\s*\n\s*needs: build/);
   assert.match(workflow, /steps\.refresh\.outcome/);
+  assert.match(workflow, /path: _site/);
+  assert.doesNotMatch(workflow, /path:\s*\.\s*$/m);
 });
 
 test("all local page assets and navigation targets exist", async () => {
