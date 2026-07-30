@@ -1,6 +1,6 @@
 # Yuting He Portfolio and HeatLens Germany
 
-Personal portfolio for geospatial NatCat risk, hydrology, statistics, and applied AI implementation. The repository includes **HeatLens Germany**, a live multi-scale decision-support application for heat, dry stress, and excess water.
+Personal portfolio for environmental engineering, statistics, geospatial NatCat risk, and applied AI and AI-assisted development. The repository includes **HeatLens Germany**, a live multi-scale decision-support application for heat, dry stress, and excess water.
 
 - Portfolio: <https://yuting-he.github.io/yuting-he-portfolio/>
 - HeatLens: <https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html>
