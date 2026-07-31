@@ -70,7 +70,7 @@
         <div class="scenario-banner" role="note">
           <span class="scenario-badge" id="live-status-badge">Loading model feed</span>
           <p id="live-status-text">Loading the latest validated DWD ICON model snapshot.</p>
-          <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Check official DWD warnings</a>
+          <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Check official weather warnings</a>
         </div>
         <div class="workbench-toolbar">
           <fieldset class="control-group date-group">
@@ -105,6 +105,13 @@
               <button class="control-button" type="button" data-layer="heat" aria-pressed="false">Heat</button>
               <button class="control-button" type="button" data-layer="dry" aria-pressed="false">Dry stress</button>
               <button class="control-button" type="button" data-layer="wet" aria-pressed="false">Excess water</button>
+            </div>
+          </fieldset>
+          <fieldset class="control-group">
+            <legend>Explanation</legend>
+            <div class="control-buttons" role="group" aria-label="Explanation detail">
+              <button class="control-button is-active" type="button" data-detail="plain" aria-pressed="true">Plain language</button>
+              <button class="control-button" type="button" data-detail="technical" aria-pressed="false">Technical detail</button>
             </div>
           </fieldset>
           <fieldset class="control-group field-context" id="field-context" hidden>
@@ -163,12 +170,12 @@
             <p id="map-status" class="map-status" role="status">Loading boundaries and forecast data.</p>
             <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
             <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
-            <div class="map-legend" aria-label="Risk score legend">
-              <span><i class="swatch watch"></i>Low 0-34</span>
-              <span><i class="swatch elevated"></i>Moderate 35-54</span>
-              <span><i class="swatch severe"></i>High 55-74</span>
-              <span><i class="swatch extreme"></i>Very high 75-100</span>
-              <span><i class="swatch unavailable"></i>Insufficient coverage</span>
+            <div class="map-legend" id="map-legend" aria-label="Risk level legend">
+              <span><i class="swatch watch"></i><span data-legend-label="low">Low</span></span>
+              <span><i class="swatch elevated"></i><span data-legend-label="moderate">Moderate</span></span>
+              <span><i class="swatch severe"></i><span data-legend-label="high">High</span></span>
+              <span><i class="swatch extreme"></i><span data-legend-label="very-high">Very high</span></span>
+              <span><i class="swatch unavailable"></i><span data-legend-label="unavailable">Insufficient coverage</span></span>
             </div>
           </section>
 
@@ -179,7 +186,11 @@
               <span id="risk-level" class="risk-level">Loading</span>
             </div>
             <p id="region-summary" class="region-summary"></p>
-            <div id="signal-list" class="signal-list" aria-label="Risk signals"></div>
+            <div class="explanation-heading">
+              <p class="section-label" id="signal-heading">What this means</p>
+              <span id="detail-mode-note">Plain language</span>
+            </div>
+            <div id="signal-list" class="signal-list" aria-labelledby="signal-heading"></div>
             <section class="trend-block" aria-labelledby="trend-title">
               <div class="trend-heading">
                 <h3 id="trend-title">9-day risk profile</h3>
@@ -207,9 +218,9 @@
                 </div>
               </div>
               <div class="authority-links">
-                <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">DWD warnings</a>
-                <a href="https://www.hochwasserzentralen.de/" target="_blank" rel="noopener noreferrer">State flood portals</a>
-                <a href="https://www.ufz.de/index.php?de=37937&m=0" target="_blank" rel="noopener noreferrer">UFZ soil-water monitor</a>
+                <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Official weather warnings</a>
+                <a href="https://www.hochwasserzentralen.de/" target="_blank" rel="noopener noreferrer">State flood services</a>
+                <a href="https://www.ufz.de/index.php?de=37937&m=0" target="_blank" rel="noopener noreferrer">Soil-water monitor</a>
               </div>
             </section>
             <div class="action-block">
@@ -220,7 +231,8 @@
               <ol id="action-list"></ol>
             </div>
             <p class="decision-note" id="decision-note"></p>
-            <dl class="provenance-list" aria-label="Data provenance">
+            <p class="plain-source-summary" id="plain-source-summary"></p>
+            <dl class="provenance-list" id="provenance-list" aria-label="Data provenance" hidden>
               <div><dt>Index model</dt><dd id="model-version">v0.7.0-observed-eps</dd></div>
               <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON + ICON-EPS</dd></div>
               <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>

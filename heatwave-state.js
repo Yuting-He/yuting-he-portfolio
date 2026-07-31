@@ -1,12 +1,14 @@
 import { AUDIENCES, FIELD_CONTEXTS, LAYERS, isIsoDate } from "./heatwave-model.js";
 
 const LEVELS = new Set(["state", "district", "basin"]);
+const DETAIL_MODES = new Set(["plain", "technical"]);
 
 export const DEFAULT_VIEW = Object.freeze({
   date: null,
   level: "state",
   audience: "residents",
   layer: "impact",
+  detail: "plain",
   crop: "dominant",
   stage: "vegetative",
   soil: "local",
@@ -27,6 +29,7 @@ export function parseViewState(search = "") {
   const date = params.get("date");
   const level = params.get("level");
   const audience = params.get("audience");
+  const detail = params.get("detail");
   const crop = params.get("crop");
   const stage = params.get("stage");
   const soil = params.get("soil");
@@ -35,6 +38,7 @@ export function parseViewState(search = "") {
     level: LEVELS.has(level) ? level : DEFAULT_VIEW.level,
     audience: Object.hasOwn(AUDIENCES, audience) ? audience : DEFAULT_VIEW.audience,
     layer: Object.hasOwn(LAYERS, requestedLayer) ? requestedLayer : DEFAULT_VIEW.layer,
+    detail: DETAIL_MODES.has(detail) ? detail : DEFAULT_VIEW.detail,
     crop: Object.hasOwn(FIELD_CONTEXTS.crops, crop) ? crop : DEFAULT_VIEW.crop,
     stage: Object.hasOwn(FIELD_CONTEXTS.stages, stage) ? stage : DEFAULT_VIEW.stage,
     soil: Object.hasOwn(FIELD_CONTEXTS.soils, soil) ? soil : DEFAULT_VIEW.soil,
@@ -114,6 +118,7 @@ export function serializeViewState(view) {
     level: view.level,
     audience: view.audience,
     layer: view.layer,
+    detail: view.detail,
     crop: view.crop,
     stage: view.stage,
     soil: view.soil,

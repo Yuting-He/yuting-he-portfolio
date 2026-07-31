@@ -24,12 +24,18 @@ test("interactive page uses bundled map libraries, OSM tiles, and exposes live-d
   assert.doesNotMatch(html, /cdn\.jsdelivr\.net/);
   assert.match(html, /Loading model feed/);
   assert.match(html, /DWD ICON/);
-  assert.match(html, /official DWD warning/i);
-  assert.match(html, /Check official DWD warnings/);
+  assert.match(html, /official warning context/i);
+  assert.match(html, /Check official weather warnings/);
   assert.match(html, /data-layer="dry"/);
   assert.match(html, /data-layer="wet"/);
+  assert.match(html, /data-detail="plain"/);
+  assert.match(html, /data-detail="technical"/);
+  assert.match(html, /id="signal-heading"/);
+  assert.match(html, /id="plain-source-summary"/);
+  assert.match(html, /id="provenance-list"/);
   assert.match(html, /hoch Wasser zentralen|hochwasserzentralen/i);
-  assert.match(html, /UFZ soil-water monitor/i);
+  assert.match(html, />Soil-water monitor</i);
+  assert.match(html, /data-legend-label="low"/);
   assert.match(html, /id="field-context"/);
   assert.match(html, /ICON ensemble mean/i);
   assert.match(html, /RADOLAN SF/i);
@@ -46,6 +52,7 @@ test("GitHub Pages refreshes on schedule and deployment is gated by build tests"
   assert.match(workflow, /deploy:\s*\n\s*needs: build/);
   assert.match(workflow, /steps\.refresh\.outcome/);
   assert.match(workflow, /path: _site/);
+  assert.match(workflow, /heatwave-language\.js/);
   assert.doesNotMatch(workflow, /path:\s*\.\s*$/m);
 });
 

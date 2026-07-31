@@ -62,7 +62,7 @@ jobs:
         shell: bash
         run: |
           mkdir _site
-          cp .nojekyll index.html styles.css heatwave-demo.html heatwave-demo.css heatwave-demo.js heatwave-model.js heatwave-state.js LICENSE THIRD_PARTY_NOTICES.md _site/
+          cp .nojekyll index.html styles.css heatwave-demo.html heatwave-demo.css heatwave-demo.js heatwave-model.js heatwave-state.js heatwave-language.js LICENSE THIRD_PARTY_NOTICES.md _site/
           cp -R assets vendor _site/
 
       - name: Upload site artifact

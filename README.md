@@ -35,6 +35,8 @@ The current impact layer still uses explicit urban/rural exposure and crop-sensi
 
 ## Local development
 
+HeatLens opens in a plain-language explanation mode that translates the selected heat and soil-water signals into an overall situation, heat meaning, ground or crop meaning, rain and standing-water meaning, confidence, and role-specific next actions. Technical detail remains available in the same interface with exact parameters, source timestamps, and model provenance. The selected explanation mode is included in shareable URLs and JSON exports.
+
 Node.js 20 or newer is required.
 
 ```bash
@@ -70,6 +72,7 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 
 - `heatwave-demo.html`, `heatwave-demo.css`, `heatwave-demo.js` - live application interface
 - `heatwave-model.js` - transparent heat, dry, excess-water, impact, and action-policy model
+- `heatwave-language.js` - deterministic plain-language translation and decision-safety wording
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
 - `assets/live/forecast.json` - last validated operational snapshot
 - `scripts/fetch-live-data.mjs` - coordinated deterministic and ensemble forecast ingestion

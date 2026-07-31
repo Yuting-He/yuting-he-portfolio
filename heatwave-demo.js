@@ -13,6 +13,15 @@ import {
   severity
 } from "./heatwave-model.js";
 import {
+  PLAIN_SOURCE_SUMMARY,
+  plainActionCategory,
+  plainActionsFor,
+  plainConfidenceLabel,
+  plainDecisionNote,
+  plainLanguageSignals,
+  plainLanguageSummary
+} from "./heatwave-language.js";
+import {
   DEFAULT_VIEW,
   isRetrospectiveDate,
   parseViewState,
@@ -76,10 +85,14 @@ const elements = {
   regionSelect: document.querySelector("#region-select"),
   map: document.querySelector("#heat-map"),
   mapStatus: document.querySelector("#map-status"),
+  mapLegend: document.querySelector("#map-legend"),
+  detailPanel: document.querySelector(".detail-panel"),
   selectedKind: document.querySelector("#selected-kind"),
   regionTitle: document.querySelector("#region-title"),
   riskLevel: document.querySelector("#risk-level"),
   regionSummary: document.querySelector("#region-summary"),
+  signalHeading: document.querySelector("#signal-heading"),
+  detailModeNote: document.querySelector("#detail-mode-note"),
   signalList: document.querySelector("#signal-list"),
   trend: document.querySelector("#risk-trend"),
   trendLayer: document.querySelector("#trend-layer-label"),
@@ -87,6 +100,8 @@ const elements = {
   actionHeadingLabel: document.querySelector("#action-heading-label"),
   actionList: document.querySelector("#action-list"),
   decisionNote: document.querySelector("#decision-note"),
+  plainSourceSummary: document.querySelector("#plain-source-summary"),
+  provenanceList: document.querySelector("#provenance-list"),
   resolutionNote: document.querySelector("#resolution-note"),
   retryLoad: document.querySelector("#retry-load"),
   shareView: document.querySelector("#share-view"),
@@ -111,6 +126,7 @@ elements.fieldContext = document.querySelector("#field-context");
 elements.cropSelect = document.querySelector("#crop-profile");
 elements.stageSelect = document.querySelector("#crop-stage");
 elements.soilSelect = document.querySelector("#soil-profile");
+elements.legendLabels = [...document.querySelectorAll("[data-legend-label]")];
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
@@ -452,6 +468,11 @@ function renderControls() {
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", String(active));
   });
+  document.querySelectorAll("[data-detail]").forEach((button) => {
+    const active = button.dataset.detail === state.detail;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
   elements.dateInput.value = state.date;
   elements.dateInput.min = state.availableDates[0];
   elements.dateInput.max = state.availableDates.at(-1);
@@ -466,14 +487,44 @@ function renderControls() {
 }
 
 function renderSummary() {
-  elements.coverage.textContent = `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
+  const plain = state.detail === "plain";
+  const technicalLegendLabels = {
+    low: "Low 0-34",
+    moderate: "Moderate 35-54",
+    high: "High 55-74",
+    "very-high": "Very high 75-100",
+    unavailable: "Insufficient coverage"
+  };
+  const plainLegendLabels = {
+    low: "Low",
+    moderate: "Moderate",
+    high: "High",
+    "very-high": "Very high",
+    unavailable: "Insufficient coverage"
+  };
+  elements.mapLegend.setAttribute("aria-label", plain ? "Risk level legend" : "Risk score legend");
+  elements.legendLabels.forEach((label) => {
+    const labels = plain ? plainLegendLabels : technicalLegendLabels;
+    label.textContent = labels[label.dataset.legendLabel];
+  });
+  elements.coverage.textContent = plain
+    ? `${state.stateFeatures.length} states with district and local detail`
+    : `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
   elements.selectedDateValue.textContent = formatDate(state.date);
-  elements.predictionUnit.textContent = "HydroBASINS L8 / observed + EPS";
-  elements.dataStatus.textContent = `${state.freshness.label} - ${freshnessText()}`;
+  elements.predictionUnit.textContent = plain ? "Local drainage areas" : "HydroBASINS L8 / observed + EPS";
+  elements.dataStatus.textContent = plain
+    ? state.freshness.stale ? "Out of date - advice paused" : `Updated ${freshnessText()}`
+    : `${state.freshness.label} - ${freshnessText()}`;
   elements.modelVersion.textContent = `v${MODEL_VERSION}`;
-  elements.liveStatusBadge.textContent = `${state.freshness.label} model feed`;
+  elements.liveStatusBadge.textContent = plain
+    ? state.freshness.stale ? "Data out of date" : "Data ready"
+    : `${state.freshness.label} model feed`;
   elements.liveStatusBadge.className = `scenario-badge ${state.freshness.className}`;
-  elements.liveStatusText.textContent = state.freshness.stale
+  elements.liveStatusText.textContent = plain
+    ? state.freshness.stale
+      ? "Some data is too old for current advice. Scores remain visible for review, but actions are paused until the next valid update."
+      : "Weather, rain, and soil-water data are current enough for this planning view. HeatLens is guidance, not an official warning."
+    : state.freshness.stale
     ? state.freshness.sourceStale
       ? `${staleSourceNames()} exceeded the runtime freshness policy. Scores remain visible for audit, but suggested actions are suppressed.`
       : "The last valid forecast snapshot is older than 36 hours. Scores remain visible for audit, but suggested actions are suppressed."
@@ -590,7 +641,9 @@ function tooltipContent(feature) {
   const name = document.createElement("strong");
   const detail = document.createElement("span");
   name.textContent = featureName(feature, state.level);
-  detail.textContent = `${LAYERS[state.layer]}: ${level.label} ${scoreLabel}`;
+  detail.textContent = state.detail === "plain"
+    ? `${level.label} concern`
+    : `${LAYERS[state.layer]}: ${level.label} ${scoreLabel}`;
   content.append(name, detail);
   return content;
 }
@@ -725,7 +778,9 @@ function renderTrend(unit) {
     dot.setAttribute("r", dates[index] === state.date ? 4.5 : 3);
     dot.setAttribute("class", `trend-dot${dates[index] === state.date ? " is-active" : ""}`);
     const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = `${formatDate(dates[index])}: ${value}`;
+    title.textContent = state.detail === "plain"
+      ? `${formatDate(dates[index])}: ${severity(value).label} concern`
+      : `${formatDate(dates[index])}: ${value}`;
     dot.append(title);
     nodes.push(dot);
   });
@@ -740,12 +795,14 @@ function renderTrend(unit) {
     nodes.push(label);
   });
   elements.trend.replaceChildren(...nodes);
-  elements.trendLayer.textContent = LAYERS[state.layer];
-  elements.trendTitle.textContent = `${dates.length}-day risk profile`;
+  elements.trendLayer.textContent = state.detail === "plain" ? "Selected concern" : LAYERS[state.layer];
+  elements.trendTitle.textContent = state.detail === "plain" ? "How the situation may change" : `${dates.length}-day risk profile`;
   const peak = Math.max(...values);
   const peakIndex = values.indexOf(peak);
   const currentIndex = dates.indexOf(state.date);
-  elements.trendDescription.textContent = `${LAYERS[state.layer]} ranges from ${Math.min(...values)} to ${peak}. Peak ${peak} on ${formatDate(dates[peakIndex])}; selected date ${formatDate(state.date)} is ${values[currentIndex]}.`;
+  elements.trendDescription.textContent = state.detail === "plain"
+    ? `Concern ranges from ${severity(Math.min(...values)).label.toLowerCase()} to ${severity(peak).label.toLowerCase()}. The highest level occurs on ${formatDate(dates[peakIndex])}; the selected date is ${severity(values[currentIndex]).label.toLowerCase()}.`
+    : `${LAYERS[state.layer]} ranges from ${Math.min(...values)} to ${peak}. Peak ${peak} on ${formatDate(dates[peakIndex])}; selected date ${formatDate(state.date)} is ${values[currentIndex]}.`;
 }
 
 function stateIdForUnit(unit) {
@@ -765,6 +822,7 @@ function renderOfficialWarning(unit) {
   const regionWarnings = warningContextForUnit(unit);
   const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
   const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
+  const plain = state.detail === "plain";
   elements.officialWarningHeading.textContent = isRetrospective
     ? "Current authoritative context - not a warning archive"
     : "Current authoritative context";
@@ -772,8 +830,10 @@ function renderOfficialWarning(unit) {
     ? `Current feed issued ${formatTimestamp(warningFeed.issuedAt)}; retrospective coverage may be incomplete for ${formatDate(state.date)}. `
     : "";
   if (warningFeed.status !== "available") {
-    elements.officialHeatTitle.textContent = "DWD feed unavailable";
-    elements.officialHeatDetail.textContent = "Open the official DWD service before making a protective decision.";
+    elements.officialHeatTitle.textContent = plain ? "Official warning feed unavailable" : "DWD feed unavailable";
+    elements.officialHeatDetail.textContent = plain
+      ? "Open the official weather-warning service before making a protective decision."
+      : "Open the official DWD service before making a protective decision.";
     elements.officialRainTitle.textContent = "Rain warning context unavailable";
     elements.officialRainDetail.textContent = "Check DWD and the responsible state flood portal directly.";
     return;
@@ -784,7 +844,9 @@ function renderOfficialWarning(unit) {
     elements.officialHeatTitle.textContent = heatWarnings[0].event || "Active DWD heat warning";
     elements.officialHeatDetail.textContent = `${contextPrefix}${heatWarnings[0].regionName}: ${heatWarnings[0].headline || "See DWD for details"}.`;
   } else {
-    elements.officialHeatTitle.textContent = "No published DWD heat warning overlaps the selected date";
+    elements.officialHeatTitle.textContent = plain
+      ? "No official heat warning overlaps the selected date"
+      : "No published DWD heat warning overlaps the selected date";
     elements.officialHeatDetail.textContent = isRetrospective
       ? "The current feed is not a warning archive for this retrospective date."
       : "The current feed does not cover the full forecast horizon; this is not an all-clear.";
@@ -795,8 +857,12 @@ function renderOfficialWarning(unit) {
     elements.officialRainTitle.textContent = rainWarnings[0].event || "Active DWD rain warning";
     elements.officialRainDetail.textContent = `${contextPrefix}${rainWarnings[0].regionName}: ${rainWarnings[0].headline || "See DWD for details"}.`;
   } else {
-    elements.officialRainTitle.textContent = "No published DWD rain warning overlaps the selected date";
-    elements.officialRainDetail.textContent = `Feed issued ${formatTimestamp(warningFeed.issuedAt)} and does not cover the full forecast horizon. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
+    elements.officialRainTitle.textContent = plain
+      ? "No official rain warning overlaps the selected date"
+      : "No published DWD rain warning overlaps the selected date";
+    elements.officialRainDetail.textContent = plain
+      ? `The current feed was issued ${formatTimestamp(warningFeed.issuedAt)} and may not cover later dates. For river flooding, check the state flood service directly; this map does not predict flood probability.`
+      : `Feed issued ${formatTimestamp(warningFeed.issuedAt)} and does not cover the full forecast horizon. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
   }
 }
 
@@ -878,28 +944,49 @@ function renderDetails() {
   const metrics = metricsForUnit(unit.level, unit.id);
   const score = scoreForLayer(metrics, state.layer);
   const level = severity(score);
+  const plain = state.detail === "plain";
   const kind = unit.level === "district" ? "district / urban district" : unit.level === "basin" ? "sub-basin" : "state";
 
+  elements.signalHeading.textContent = plain ? "What this means" : "Technical evidence";
+  elements.detailPanel.classList.toggle("is-plain", plain);
+  elements.detailModeNote.textContent = plain ? "Plain language" : "Exact values and sources";
+  elements.plainSourceSummary.textContent = PLAIN_SOURCE_SUMMARY;
+  elements.plainSourceSummary.hidden = !plain;
+  elements.provenanceList.hidden = plain;
   elements.selectedKind.textContent = `Selected ${kind}`;
   elements.regionTitle.textContent = featureName(unit.feature, unit.level);
-  elements.riskLevel.textContent = `${level.label} ${score}`;
+  elements.riskLevel.textContent = plain ? level.label : `${level.label} ${score}`;
   elements.riskLevel.className = `risk-level ${level.className}`;
   renderOfficialWarning(unit);
   if (!metrics.available) {
     elements.riskLevel.textContent = "Unavailable";
-    const coverageReason = metrics.spatialCoverage < 50
-      ? `the exact basin overlay covers only ${metrics.spatialCoverage}% of this region`
-      : `source completeness is only ${metrics.completeness}%`;
-    elements.regionSummary.textContent = `${formatDate(state.date)} has no score because ${coverageReason}.`;
-    elements.signalList.replaceChildren(
-      appendSignal("Spatial coverage", `${metrics.spatialCoverage}% exact overlap`),
-      appendSignal("Source completeness", `${metrics.completeness}%`),
-      appendSignal("Status", "Risk and action outputs suppressed"),
-      appendSignal("Official source", "Use DWD and the responsible local authority")
-    );
+    if (plain) {
+      elements.regionSummary.textContent = "There is not enough reliable local information to translate this area into a decision signal.";
+      elements.signalList.replaceChildren(
+        appendSignal("What is missing", metrics.spatialCoverage < 50
+          ? "Too little of this area matches the local drainage-area map."
+          : "Too many of the required data inputs are missing."),
+        appendSignal("What HeatLens does", "It hides the risk result and action suggestions instead of filling the gap with nearby values."),
+        appendSignal("What to do", "Use current official information and observations from the selected area.")
+      );
+    } else {
+      const coverageReason = metrics.spatialCoverage < 50
+        ? `the exact basin overlay covers only ${metrics.spatialCoverage}% of this region`
+        : `source completeness is only ${metrics.completeness}%`;
+      elements.regionSummary.textContent = `${formatDate(state.date)} has no score because ${coverageReason}.`;
+      elements.signalList.replaceChildren(
+        appendSignal("Spatial coverage", `${metrics.spatialCoverage}% exact overlap`),
+        appendSignal("Source completeness", `${metrics.completeness}%`),
+        appendSignal("Status", "Risk and action outputs suppressed"),
+        appendSignal("Official source", "Use DWD and the responsible local authority")
+      );
+    }
     elements.actionList.replaceChildren();
-    elements.confidence.textContent = "Insufficient input coverage";
-    elements.decisionNote.textContent = "HeatLens fails closed below 50% spatial coverage or 85% source completeness; it does not substitute nearby values.";
+    elements.actionHeadingLabel.textContent = "Suggested next actions";
+    elements.confidence.textContent = plain ? "Not enough local information" : "Insufficient input coverage";
+    elements.decisionNote.textContent = plain
+      ? "HeatLens does not guess when coverage is too low. Check the official services and local conditions directly."
+      : "HeatLens fails closed below 50% spatial coverage or 85% source completeness; it does not substitute nearby values.";
     renderTrend(unit);
     return;
   }
@@ -912,24 +999,48 @@ function renderDetails() {
     heatWarningCount: datedWarnings.filter((warning) => warning.isHeat).length,
     rainWarningCount: datedWarnings.filter((warning) => warning.isRain).length
   });
+  const plainActions = plainActionsFor(metrics, state.audience, {
+    heatWarningCount: datedWarnings.filter((warning) => warning.isHeat).length,
+    rainWarningCount: datedWarnings.filter((warning) => warning.isRain).length
+  });
   const confidence = evidenceConfidence(metrics);
   const dwdSoilDate = formatDate(state.liveData.soilMoisture.dwd.validAt.slice(0, 10));
   const fieldSignal = Number.isFinite(metrics.dwdNfkPct)
     ? `baseline ${dwdSoilDate}: ${metrics.cropLabel}, mean ${metrics.dwdNfkPct}% nFK across 10 cm layers to ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% area coverage | ${metrics.soilLabel}`
     : `${metrics.cropLabel}: DWD nFK baseline unavailable or below 85% area coverage (${metrics.dwdNfkCoveragePct}%) | ${metrics.soilLabel}`;
-  elements.regionSummary.textContent = `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
-  elements.signalList.replaceChildren(
-    appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
-    appendSignal("Measured check", observationText(metrics)),
-    appendSignal("Ensemble dispersion", ensembleText(metrics)),
-    appendSignal("UFZ percentile baseline", ufzText(metrics)),
-    appendSignal("Plant-water baseline", `${Number.isFinite(metrics.ufzPlantAvailableWaterPct) ? `UFZ ${metrics.ufzPlantAvailableWaterPct}% nFK | ` : ""}${fieldSignal}`),
-    appendSignal("Water forecast", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm | ET0 ${metrics.et0Mm} mm/day`),
-    appendSignal("RADOLAN baseline", radolanText(metrics)),
-    appendSignal("Water screening", `dry ${metrics.dryStressScore}/100 | excess water ${metrics.wetStressScore}/100`),
-    appendSignal("Evidence quality", `${confidence.score}/100 ${confidence.label.toLowerCase()} | ${metrics.completeness}% forcing completeness | ${metrics.spatialCoverage}% exact overlap`)
-  );
-  const historicalInterpretation = [
+  elements.regionSummary.textContent = plain
+    ? plainLanguageSummary(metrics, state.audience, state.layer, {
+        regionName: featureName(unit.feature, unit.level),
+        dateLabel: formatDate(state.date),
+        stale: state.freshness.stale,
+        isRetrospective
+      })
+    : `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
+  const signals = plain
+    ? plainLanguageSignals(metrics, state.audience, state.layer, { stale: state.freshness.stale, isRetrospective })
+        .map((signal) => appendSignal(signal.label, signal.text))
+    : [
+        appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
+        appendSignal("Measured check", observationText(metrics)),
+        appendSignal("Ensemble dispersion", ensembleText(metrics)),
+        appendSignal("UFZ percentile baseline", ufzText(metrics)),
+        appendSignal("Plant-water baseline", `${Number.isFinite(metrics.ufzPlantAvailableWaterPct) ? `UFZ ${metrics.ufzPlantAvailableWaterPct}% nFK | ` : ""}${fieldSignal}`),
+        appendSignal("Water forecast", `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm | ET0 ${metrics.et0Mm} mm/day`),
+        appendSignal("RADOLAN baseline", radolanText(metrics)),
+        appendSignal("Water screening", `dry ${metrics.dryStressScore}/100 | excess water ${metrics.wetStressScore}/100`),
+        appendSignal("Evidence quality", `${confidence.score}/100 ${confidence.label.toLowerCase()} | ${metrics.completeness}% forcing completeness | ${metrics.spatialCoverage}% exact overlap`)
+      ];
+  elements.signalList.replaceChildren(...signals);
+  const historicalInterpretation = plain ? [
+    {
+      category: "Retrospective",
+      text: `${formatDate(state.date)} is a past-date reconstruction. It describes signals for that date and is not advice for today.`
+    },
+    {
+      category: "Validate",
+      text: "Compare it with archived official warnings, local measurements, and recorded outcomes before drawing conclusions."
+    }
+  ] : [
     {
       category: "Retrospective",
       text: `${formatDate(state.date)} is a historical screening reconstruction. It describes the dated heat and soil-water signals shown above; it is not current action guidance.`
@@ -944,18 +1055,24 @@ function renderDetails() {
     ? historicalInterpretation
     : state.freshness.stale
       ? []
-      : guidance.actions;
+      : plain
+        ? plainActions
+        : guidance.actions;
   elements.actionList.replaceChildren(...actions.map((action) => {
     const item = document.createElement("li");
     const category = document.createElement("strong");
-    category.textContent = action.category;
+    category.textContent = plain ? plainActionCategory(action.category) : action.category;
     const text = document.createElement("span");
     text.textContent = action.text;
     item.append(category, text);
     return item;
   }));
-  elements.confidence.textContent = `${confidence.label} ${confidence.score}/100`;
-  elements.decisionNote.textContent = isRetrospective
+  elements.confidence.textContent = plain
+    ? plainConfidenceLabel(metrics, { stale: state.freshness.stale, isRetrospective })
+    : `${confidence.label} ${confidence.score}/100`;
+  elements.decisionNote.textContent = plain
+    ? plainDecisionNote(state.audience, { isRetrospective, stale: state.freshness.stale })
+    : isRetrospective
     ? "Historical views support review and model evaluation only. They must not be read as present-day resident, farm, or municipal instructions; the current DWD feed is not a warning archive."
     : state.freshness.stale
     ? state.freshness.sourceStale
@@ -966,6 +1083,16 @@ function renderDetails() {
 }
 
 function renderResolutionNote() {
+  if (state.detail === "plain") {
+    if (state.level === "basin") {
+      elements.resolutionNote.textContent = "This local view follows a drainage area rather than an administrative boundary.";
+    } else if (state.level === "district") {
+      elements.resolutionNote.textContent = "District colors combine smaller drainage areas, so conditions can still differ within a district.";
+    } else {
+      elements.resolutionNote.textContent = "State colors are broad overviews. Choose a district or local drainage area for more detail.";
+    }
+    return;
+  }
   if (state.level === "basin") {
     elements.resolutionNote.textContent = "Sub-basin polygons are the prediction units. Each unit samples the DWD ICON grid at its centroid and combines daily heat, atmospheric-demand, soil-water, and water-balance fields.";
   } else if (state.level === "district") {
@@ -1100,6 +1227,7 @@ function currentSnapshot() {
       spatialLevel: state.level,
       decisionLens: state.audience,
       riskLayer: state.layer,
+      explanationMode: state.detail,
       fieldContext: {
         crop: state.crop,
         stage: state.stage,
@@ -1166,6 +1294,13 @@ document.querySelectorAll("[data-audience]").forEach((button) => {
 document.querySelectorAll("[data-layer]").forEach((button) => {
   button.addEventListener("click", () => {
     state.layer = button.dataset.layer;
+    renderAll();
+  });
+});
+
+document.querySelectorAll("[data-detail]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.detail = button.dataset.detail;
     renderAll();
   });
 });

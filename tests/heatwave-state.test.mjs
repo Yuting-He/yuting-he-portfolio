@@ -16,6 +16,7 @@ test("shared live view state round-trips through URL parameters", () => {
     level: "basin",
     audience: "farmers",
     layer: "dry",
+    detail: "technical",
     crop: "maize",
     stage: "flowering",
     soil: "sand",
@@ -32,7 +33,7 @@ test("legacy drought and water links migrate to the dry-stress layer", () => {
 });
 
 test("invalid shared state falls back to a safe default view", () => {
-  const parsed = parseViewState("?date=2026-02-30&level=postcode&audience=admin&layer=wind&state=BAD&district=DE2");
+  const parsed = parseViewState("?date=2026-02-30&level=postcode&audience=admin&layer=wind&detail=expert&state=BAD&district=DE2");
   assert.deepEqual(parsed, DEFAULT_VIEW);
 });
 

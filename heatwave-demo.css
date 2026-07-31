@@ -283,8 +283,8 @@ h1 {
 
 .workbench-toolbar {
   display: grid;
-  grid-template-columns: 1.05fr 1.3fr 1.2fr 1fr;
-  gap: 20px;
+  grid-template-columns: 1.05fr 1.25fr 1.15fr 1fr 1.05fr;
+  gap: 16px;
   padding-bottom: 25px;
   border-bottom: 1px solid var(--line);
 }
@@ -602,6 +602,25 @@ h1 {
   color: var(--muted);
 }
 
+.explanation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.explanation-heading p {
+  margin: 0;
+}
+
+.explanation-heading span {
+  color: var(--teal-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .signal-list {
   display: grid;
   border-top: 1px solid var(--line);
@@ -625,6 +644,18 @@ h1 {
   font-size: 13px;
   font-weight: 700;
   text-align: right;
+}
+
+.detail-panel.is-plain .signal-row {
+  grid-template-columns: 1fr;
+  gap: 3px;
+  padding: 11px 0;
+}
+
+.detail-panel.is-plain .signal-row strong {
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: left;
 }
 
 .trend-block {
@@ -776,6 +807,19 @@ h1 {
   margin: 19px 0 0;
   padding-top: 11px;
   border-top: 3px solid var(--gold);
+}
+
+.plain-source-summary {
+  margin: 16px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#provenance-list[hidden],
+#plain-source-summary[hidden] {
+  display: none;
 }
 
 .provenance-list {
@@ -1053,6 +1097,7 @@ footer p {
   .map-stage-heading,
   .region-heading,
   .action-heading,
+  .explanation-heading,
   .trend-heading,
   footer {
     align-items: flex-start;
@@ -1085,7 +1130,8 @@ footer p {
   }
 
   .signal-row strong,
-  .action-heading span {
+  .action-heading span,
+  .explanation-heading span {
     text-align: left;
   }
 
