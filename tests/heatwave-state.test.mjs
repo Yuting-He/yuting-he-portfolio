@@ -20,6 +20,11 @@ test("shared live view state round-trips through URL parameters", () => {
     crop: "maize",
     stage: "flowering",
     soil: "sand",
+    farmGoal: "irrigation",
+    plant: "newlyPlantedWoody",
+    gardenSetting: "openGround",
+    gardenSoil: "moistureRetentive",
+    gardenGoal: "watering",
     selectedState: "DE2",
     selectedDistrict: "DE21H",
     selectedBasin: "2080469900"

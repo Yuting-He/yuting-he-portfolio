@@ -25,7 +25,10 @@ createServer((request, response) => {
     return;
   }
 
-  response.writeHead(200, { "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream" });
+  response.writeHead(200, {
+    "Content-Type": mimeTypes[extname(filePath)] || "application/octet-stream",
+    "Cache-Control": "no-store"
+  });
   createReadStream(filePath).pipe(response);
 }).listen(port, "127.0.0.1", () => {
   console.log(`HeatLens preview: http://127.0.0.1:${port}/`);

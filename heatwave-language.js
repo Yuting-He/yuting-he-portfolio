@@ -11,6 +11,11 @@ const AUDIENCE_CONTEXT = Object.freeze({
     groundLabel: "Field water",
     drySubject: "the selected crop and its root zone"
   },
+  gardeners: {
+    impact: "the selected ornamental plants and growing place",
+    groundLabel: "Plants and root conditions",
+    drySubject: "the selected plants and their root area"
+  },
   municipal: {
     impact: "local preparedness and public services",
     groundLabel: "Ground and green spaces",
@@ -207,7 +212,7 @@ export function plainLanguageSignals(metrics, audience, layer, { stale = false, 
 
 export function plainActionCategory(category) {
   if (category === "Official check") return "Check official advice";
-  if (category === "Verify" || category === "Validate") return "Check locally";
+  if (category === "Verify" || category === "Validate" || category === "Check locally") return "Check locally";
   if (category === "Do not automate") return "Human decision required";
   if (category === "Activation gate") return "Before activating";
   if (category === "Retrospective") return "Past-date context";
@@ -237,10 +242,44 @@ export function plainActionsFor(metrics, audience, options = {}) {
   const actions = [];
 
   if (audience === "farmers") {
+    const stageText = metrics.stageAuto
+      ? `${metrics.stageLabel || "growth stage"}, estimated from the selected date`
+      : `${metrics.stageLabel || "growth stage"}, selected by you`;
     actions.push({
       category: "Verify",
-      text: `Check several representative parts of the field for ${metrics.cropLabel || "the selected crop"}. Look at moisture around the roots, crop symptoms, and recent rain before changing operations.`
+      text: `Check several representative parts of the field for ${metrics.cropLabel || "the selected crop"}. Look at moisture around the roots, crop symptoms, and recent rain; the current stage is ${stageText}.`
     });
+    if (metrics.farmGoal === "overview") {
+      actions.push({
+        category: "Overall field focus",
+        text: "Look at dry soil, very wet ground, heat, and the crop stage together. Inspect the part of the field least likely to match the regional average before changing operations.",
+        focus: true
+      });
+    } else if (metrics.farmGoal === "irrigation") {
+      actions.push({
+        category: "Irrigation focus",
+        text: metrics.precipitationMm >= 8 && metrics.dryStressScore < 75
+          ? "Useful rain may change the field balance. Recheck the root zone after the rain before scheduling irrigation."
+          : "Compare representative root-zone measurements, crop condition, expected rain, water availability, and the farm's own trigger. This view does not calculate a watering amount.",
+        focus: true
+      });
+    } else if (metrics.farmGoal === "fieldAccess") {
+      actions.push({
+        category: "Access focus",
+        text: metrics.wetStressScore >= 35
+          ? "Inspect low spots, headlands, wheelings, and slowly drained soil before traffic. Postpone entry where rutting, compaction, erosion, or unsafe access is likely."
+          : "No strong wet-ground signal stands out, but check low spots and the least-drained field before machinery access.",
+        focus: true
+      });
+    } else if (metrics.farmGoal === "workTiming") {
+      actions.push({
+        category: "Work timing",
+        text: metrics.heatScore >= 35
+          ? "Move strenuous work to a cooler part of the day where possible, and plan water, shade, breaks, and livestock checks."
+          : "Check the local hourly forecast, worker exposure, and livestock conditions before fixing the work window.",
+        focus: true
+      });
+    }
     if (metrics.dryStressScore >= 35) {
       actions.push({
         category: dryLevel,
@@ -265,11 +304,72 @@ export function plainActionsFor(metrics, audience, options = {}) {
         text: "Check heat-sensitive crop stages, livestock water and shade, and worker exposure. Move strenuous work to a cooler part of the day where possible."
       });
     }
-    actions.push({
+    const safetyGate = {
       category: "Do not automate",
       text: "Do not change harvest timing, irrigation amount, crop treatment, or another costly operation from HeatLens alone. Confirm conditions in the field and obtain qualified local advice."
+    };
+    return [...actions.slice(0, 4), safetyGate];
+  }
+
+  if (audience === "gardeners") {
+    const plant = metrics.plantLabel || "the selected plants";
+    actions.push({
+      category: "Check locally",
+      text: `Check ${plant.toLowerCase()} where they actually grow. A pot, raised bed, wall shadow, and individual root ball can be much drier or wetter than the surrounding map area.`
     });
-    return actions.slice(0, 5);
+    const wateringAction = {
+      category: "Watering check",
+      text: metrics.wetStressScore >= 55
+        ? "Pause routine watering, empty standing water from containers where appropriate, and wait for the root area to drain before checking again."
+        : metrics.precipitationMm >= 8 && metrics.dryStressScore < 75
+          ? "Useful rain is forecast. Wait, then check whether it reached the roots; plants under roofs or eaves may still be dry."
+          : metrics.plant === "seasonalFlowers" || metrics.gardenSetting === "container"
+            ? "Check a little below the potting-mix surface and use pot weight or visible wilt as a second clue. If dry, water the roots in the cooler morning and let extra water drain."
+            : metrics.plant === "newlyPlantedWoody"
+              ? "Check both the original root ball and nearby soil. Give newly planted trees and shrubs priority in dry spells, watering the root area slowly and checking again before repeating."
+              : metrics.plant === "establishedWoody"
+                ? "Do not react to a dry surface alone. Check deeper and look for lasting stress; established trees and shrubs usually need priority only during prolonged drought."
+                : metrics.plant === "droughtTolerant"
+                  ? "Let the upper soil dry between checks. Avoid routine watering from the map signal alone because persistently wet roots can be the greater risk."
+                  : "Check below the surface and look for wilt that remains in the morning. If the root area is dry, water in the cooler morning and check again before repeating."
+    };
+    const heatAction = {
+      category: "Heat protection",
+      text: metrics.heatScore >= 35
+        ? metrics.gardenSetting === "container"
+          ? "Move vulnerable pots out of harsh afternoon sun where practical, shade the container itself, and check moisture in the morning."
+          : "Protect newly planted or visibly stressed plants from harsh afternoon exposure where practical, and avoid pruning or transplanting during peak heat."
+        : "No strong heat signal stands out. Keep the normal local check and do not add water only because the surface looks dry."
+    };
+    const drainageAction = metrics.wetStressScore >= 35 || metrics.gardenGoal === "waterlogging"
+      ? {
+          category: "Drainage check",
+          text: "Check saucers, containers, low spots, and slowly drained beds. Delay watering and avoid walking on saturated soil until it has drained."
+        }
+      : null;
+    const seasonAction = {
+      category: "Seasonal context",
+      text: metrics.gardenSeason === "dormant"
+        ? "This is the winter or dormant season. Water less often and act only after checking moisture, frost, drainage, and the needs of evergreen or sheltered plants."
+        : metrics.gardenSeason === "summerStress"
+          ? "This is the main heat and water-demand season. Check vulnerable plants more often, but use the plant and root-zone check instead of a fixed calendar."
+          : `This is the ${metrics.gardenSeasonLabel}. Give newly planted material priority while roots establish or recover.`
+    };
+    const focusedKey = metrics.gardenGoal === "overview" ? "season" : metrics.gardenGoal;
+    const tailored = { watering: wateringAction, heatProtection: heatAction, waterlogging: drainageAction, season: seasonAction };
+    for (const [key, item] of Object.entries(tailored)) {
+      if (item) item.focus = key === focusedKey;
+    }
+    const goalOrder = {
+      overview: ["season", "watering", "heatProtection", "waterlogging"],
+      watering: ["watering", "season", "heatProtection", "waterlogging"],
+      heatProtection: ["heatProtection", "watering", "season", "waterlogging"],
+      waterlogging: ["waterlogging", "watering", "season", "heatProtection"]
+    };
+    for (const key of goalOrder[metrics.gardenGoal] || goalOrder.overview) {
+      if (tailored[key]) actions.push(tailored[key]);
+    }
+    return [...actions.slice(0, 4), { category: "Official check", text: plainOfficialAdvice(options) }];
   }
 
   if (audience === "municipal") {
@@ -340,6 +440,9 @@ export function plainDecisionNote(audience, { isRetrospective = false, stale = f
   }
   if (audience === "farmers") {
     return "These suggestions help prioritise field checks. They do not set irrigation amounts, harvest timing, treatments, or other costly operations automatically.";
+  }
+  if (audience === "gardeners") {
+    return "These suggestions help decide what to inspect next. Check the actual pot, bed, plant condition, drainage, and local watering rules before acting.";
   }
   if (audience === "municipal") {
     return "These suggestions help prioritise preparedness checks. Only the responsible authority can activate an official response.";

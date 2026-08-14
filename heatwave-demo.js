@@ -1,6 +1,8 @@
 import {
   AUDIENCES,
+  FARM_GOALS,
   FIELD_CONTEXTS,
+  HORTICULTURE_CONTEXTS,
   LAYERS,
   MODEL_VERSION,
   actionsFor,
@@ -91,6 +93,7 @@ const elements = {
   regionTitle: document.querySelector("#region-title"),
   riskLevel: document.querySelector("#risk-level"),
   regionSummary: document.querySelector("#region-summary"),
+  personalisationSummary: document.querySelector("#personalisation-summary"),
   signalHeading: document.querySelector("#signal-heading"),
   detailModeNote: document.querySelector("#detail-mode-note"),
   signalList: document.querySelector("#signal-list"),
@@ -126,6 +129,12 @@ elements.fieldContext = document.querySelector("#field-context");
 elements.cropSelect = document.querySelector("#crop-profile");
 elements.stageSelect = document.querySelector("#crop-stage");
 elements.soilSelect = document.querySelector("#soil-profile");
+elements.farmGoalSelect = document.querySelector("#farm-goal");
+elements.gardenContext = document.querySelector("#garden-context");
+elements.plantSelect = document.querySelector("#plant-profile");
+elements.gardenSettingSelect = document.querySelector("#garden-setting");
+elements.gardenSoilSelect = document.querySelector("#garden-soil");
+elements.gardenGoalSelect = document.querySelector("#garden-goal");
 elements.legendLabels = [...document.querySelectorAll("[data-legend-label]")];
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
@@ -341,7 +350,11 @@ function weightedPredictionsForUnit(level, id, date) {
 }
 
 function metricsForUnit(level, id, date = state.date) {
-  const cacheKey = `${date}|${state.audience}|${state.crop}|${state.stage}|${state.soil}|${level}|${id}`;
+  const contextKey = [
+    state.crop, state.stage, state.soil, state.farmGoal,
+    state.plant, state.gardenSetting, state.gardenSoil, state.gardenGoal
+  ].join("|");
+  const cacheKey = `${date}|${state.audience}|${contextKey}|${level}|${id}`;
   if (state.metricCache.has(cacheKey)) return state.metricCache.get(cacheKey);
   const predictions = weightedPredictionsForUnit(level, id, date);
   if (!predictions.length) throw new Error(`No live prediction values for ${level} ${id} on ${date}`);
@@ -352,7 +365,12 @@ function metricsForUnit(level, id, date = state.date) {
     cropSensitivity: profile.cropSensitivity,
     crop: state.crop,
     stage: state.stage,
-    soil: state.soil
+    soil: state.soil,
+    farmGoal: state.farmGoal,
+    plant: state.plant,
+    gardenSetting: state.gardenSetting,
+    gardenSoil: state.gardenSoil,
+    gardenGoal: state.gardenGoal
   });
   if (level === "basin") {
     metrics.spatialCoverage = 100;
@@ -479,11 +497,20 @@ function renderControls() {
   const dateIndex = state.availableDates.indexOf(state.date);
   elements.previousDay.disabled = dateIndex <= 0;
   elements.nextDay.disabled = dateIndex < 0 || dateIndex >= state.availableDates.length - 1;
-  elements.dateNote.textContent = `${formatDate(state.availableDates[0])} - ${formatDate(state.availableDates.at(-1))}`;
+  const availableDateRange = `${formatDate(state.availableDates[0])} - ${formatDate(state.availableDates.at(-1))}`;
+  elements.dateNote.textContent = state.freshness.stale
+    ? `Expired snapshot: ${availableDateRange}. Newer dates require a data refresh.`
+    : `Available in this snapshot: ${availableDateRange}`;
   elements.fieldContext.hidden = state.audience !== "farmers";
+  elements.gardenContext.hidden = state.audience !== "gardeners";
   elements.cropSelect.value = state.crop;
   elements.stageSelect.value = state.stage;
   elements.soilSelect.value = state.soil;
+  elements.farmGoalSelect.value = state.farmGoal;
+  elements.plantSelect.value = state.plant;
+  elements.gardenSettingSelect.value = state.gardenSetting;
+  elements.gardenSoilSelect.value = state.gardenSoil;
+  elements.gardenGoalSelect.value = state.gardenGoal;
 }
 
 function renderSummary() {
@@ -946,6 +973,8 @@ function renderDetails() {
   const level = severity(score);
   const plain = state.detail === "plain";
   const kind = unit.level === "district" ? "district / urban district" : unit.level === "basin" ? "sub-basin" : "state";
+  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
+  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
 
   elements.signalHeading.textContent = plain ? "What this means" : "Technical evidence";
   elements.detailPanel.classList.toggle("is-plain", plain);
@@ -957,6 +986,25 @@ function renderDetails() {
   elements.regionTitle.textContent = featureName(unit.feature, unit.level);
   elements.riskLevel.textContent = plain ? level.label : `${level.label} ${score}`;
   elements.riskLevel.className = `risk-level ${level.className}`;
+  const focusStatus = isRetrospective
+    ? "This historical view keeps the selection but does not generate current action guidance."
+    : state.freshness.stale
+      ? "The selection is active, but action guidance is paused until the data refreshes."
+      : "This changes the recommendation priority, not the underlying environmental score.";
+  if (state.audience === "farmers") {
+    elements.personalisationSummary.hidden = false;
+    elements.personalisationSummary.textContent =
+      `Advice focus: ${FARM_GOALS[metrics.farmGoal].label}. Personalised for ${metrics.cropLabel}, ` +
+      `${metrics.stageLabel.toLowerCase()}${metrics.stageAuto ? " estimated from the selected date" : " selected manually"}. ${focusStatus}`;
+  } else if (state.audience === "gardeners") {
+    elements.personalisationSummary.hidden = false;
+    elements.personalisationSummary.textContent =
+      `Advice focus: ${metrics.gardenGoalLabel}. Personalised for ${metrics.plantLabel.toLowerCase()} in ` +
+      `${metrics.gardenSettingLabel.toLowerCase()} with ${metrics.gardenSoilLabel.toLowerCase()} drainage. ${focusStatus}`;
+  } else {
+    elements.personalisationSummary.hidden = true;
+    elements.personalisationSummary.textContent = "";
+  }
   renderOfficialWarning(unit);
   if (!metrics.available) {
     elements.riskLevel.textContent = "Unavailable";
@@ -993,8 +1041,6 @@ function renderDetails() {
   const warningContext = warningContextForUnit(unit);
   const datedWarnings = (warningContext.warnings || [])
     .filter((warning) => warningAppliesToDate(warning, state.date));
-  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
-  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
   const guidance = actionsFor(metrics, state.audience, {
     heatWarningCount: datedWarnings.filter((warning) => warning.isHeat).length,
     rainWarningCount: datedWarnings.filter((warning) => warning.isRain).length
@@ -1005,9 +1051,16 @@ function renderDetails() {
   });
   const confidence = evidenceConfidence(metrics);
   const dwdSoilDate = formatDate(state.liveData.soilMoisture.dwd.validAt.slice(0, 10));
+  const waterSubject = state.audience === "gardeners" ? metrics.plantLabel : metrics.cropLabel;
+  const waterProfile = state.audience === "gardeners" ? metrics.waterProfileLabel : metrics.cropWaterProfileLabel;
   const fieldSignal = Number.isFinite(metrics.dwdNfkPct)
-    ? `baseline ${dwdSoilDate}: ${metrics.cropLabel}, mean ${metrics.dwdNfkPct}% nFK across 10 cm layers to ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% area coverage | ${metrics.soilLabel}`
-    : `${metrics.cropLabel}: DWD nFK baseline unavailable or below 85% area coverage (${metrics.dwdNfkCoveragePct}%) | ${metrics.soilLabel}`;
+    ? `baseline ${dwdSoilDate}: ${waterSubject}, mean ${metrics.dwdNfkPct}% nFK across 10 cm layers to ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% area coverage | ${waterProfile}${state.audience === "farmers" ? ` | ${metrics.soilLabel}` : ""}`
+    : `${waterSubject}: DWD nFK baseline unavailable or below 85% area coverage (${metrics.dwdNfkCoveragePct}%) | ${waterProfile}`;
+  const selectedContextSignal = state.audience === "farmers"
+    ? `${metrics.cropLabel} | ${metrics.stageLabel}${metrics.stageAuto ? " (date-estimated)" : " (manual)"} | ${metrics.soilLabel} | ${FARM_GOALS[metrics.farmGoal].label}`
+    : state.audience === "gardeners"
+      ? `${metrics.plantLabel} | ${metrics.gardenSettingLabel} | ${metrics.gardenSoilLabel} | ${metrics.gardenSeasonLabel} | ${metrics.gardenGoalLabel}`
+      : null;
   elements.regionSummary.textContent = plain
     ? plainLanguageSummary(metrics, state.audience, state.layer, {
         regionName: featureName(unit.feature, unit.level),
@@ -1020,6 +1073,7 @@ function renderDetails() {
     ? plainLanguageSignals(metrics, state.audience, state.layer, { stale: state.freshness.stale, isRetrospective })
         .map((signal) => appendSignal(signal.label, signal.text))
     : [
+        ...(selectedContextSignal ? [appendSignal("Selected context", selectedContextSignal)] : []),
         appendSignal("Thermal forecast", `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
         appendSignal("Measured check", observationText(metrics)),
         appendSignal("Ensemble dispersion", ensembleText(metrics)),
@@ -1050,7 +1104,12 @@ function renderDetails() {
       text: "Compare the dated DWD station and RADOLAN observations with archived official warnings, local measurements, and recorded outcomes before drawing conclusions."
     }
   ];
-  elements.actionHeadingLabel.textContent = isRetrospective ? "Historical interpretation" : "Suggested next actions";
+  const activeFocusLabel = state.audience === "farmers"
+    ? FARM_GOALS[metrics.farmGoal].label
+    : state.audience === "gardeners" ? metrics.gardenGoalLabel : null;
+  elements.actionHeadingLabel.textContent = isRetrospective
+    ? "Historical interpretation"
+    : activeFocusLabel ? `Suggested actions: ${activeFocusLabel}` : "Suggested next actions";
   const actions = isRetrospective
     ? historicalInterpretation
     : state.freshness.stale
@@ -1060,6 +1119,7 @@ function renderDetails() {
         : guidance.actions;
   elements.actionList.replaceChildren(...actions.map((action) => {
     const item = document.createElement("li");
+    item.classList.toggle("is-focused-action", action.focus === true);
     const category = document.createElement("strong");
     category.textContent = plain ? plainActionCategory(action.category) : action.category;
     const text = document.createElement("span");
@@ -1231,7 +1291,14 @@ function currentSnapshot() {
       fieldContext: {
         crop: state.crop,
         stage: state.stage,
-        soil: state.soil
+        soil: state.soil,
+        adviceFocus: state.farmGoal
+      },
+      gardenContext: {
+        plant: state.plant,
+        setting: state.gardenSetting,
+        drainage: state.gardenSoil,
+        adviceFocus: state.gardenGoal
       }
     },
     region: { id: unit.id, name: featureName(unit.feature, unit.level), level: unit.level },
@@ -1308,7 +1375,12 @@ document.querySelectorAll("[data-detail]").forEach((button) => {
 [
   [elements.cropSelect, "crop", FIELD_CONTEXTS.crops],
   [elements.stageSelect, "stage", FIELD_CONTEXTS.stages],
-  [elements.soilSelect, "soil", FIELD_CONTEXTS.soils]
+  [elements.soilSelect, "soil", FIELD_CONTEXTS.soils],
+  [elements.farmGoalSelect, "farmGoal", FARM_GOALS],
+  [elements.plantSelect, "plant", HORTICULTURE_CONTEXTS.plants],
+  [elements.gardenSettingSelect, "gardenSetting", HORTICULTURE_CONTEXTS.settings],
+  [elements.gardenSoilSelect, "gardenSoil", HORTICULTURE_CONTEXTS.soils],
+  [elements.gardenGoalSelect, "gardenGoal", HORTICULTURE_CONTEXTS.goals]
 ].forEach(([select, key, options]) => {
   select.addEventListener("change", () => {
     if (Object.hasOwn(options, select.value)) {

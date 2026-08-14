@@ -16,7 +16,10 @@ test("every element id referenced by the application exists in the page", async 
 });
 
 test("interactive page uses bundled map libraries, OSM tiles, and exposes live-data boundaries", async () => {
-  const html = await readFile(new URL("../heatwave-demo.html", import.meta.url), "utf8");
+  const [script, html] = await Promise.all([
+    readFile(new URL("../heatwave-demo.js", import.meta.url), "utf8"),
+    readFile(new URL("../heatwave-demo.html", import.meta.url), "utf8")
+  ]);
   assert.match(html, /\.\/vendor\/d3\.min\.js/);
   assert.match(html, /\.\/vendor\/leaflet\.js/);
   assert.match(html, /\.\/vendor\/leaflet\.css/);
@@ -37,6 +40,13 @@ test("interactive page uses bundled map libraries, OSM tiles, and exposes live-d
   assert.match(html, />Soil-water monitor</i);
   assert.match(html, /data-legend-label="low"/);
   assert.match(html, /id="field-context"/);
+  assert.match(html, /data-audience="gardeners"/);
+  assert.match(html, /id="garden-context"/);
+  assert.match(html, /id="plant-profile"/);
+  assert.match(html, /id="farm-goal"/);
+  assert.match(html, /id="personalisation-summary"/);
+  assert.match(script, /Newer dates require a data refresh/);
+  assert.match(script, /is-focused-action/);
   assert.match(html, /ICON ensemble mean/i);
   assert.match(html, /RADOLAN SF/i);
   assert.match(html, /HeatLens supports decisions; it does not reissue warnings/i);

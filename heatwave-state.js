@@ -1,4 +1,11 @@
-import { AUDIENCES, FIELD_CONTEXTS, LAYERS, isIsoDate } from "./heatwave-model.js";
+import {
+  AUDIENCES,
+  FARM_GOALS,
+  FIELD_CONTEXTS,
+  HORTICULTURE_CONTEXTS,
+  LAYERS,
+  isIsoDate
+} from "./heatwave-model.js";
 
 const LEVELS = new Set(["state", "district", "basin"]);
 const DETAIL_MODES = new Set(["plain", "technical"]);
@@ -10,8 +17,13 @@ export const DEFAULT_VIEW = Object.freeze({
   layer: "impact",
   detail: "plain",
   crop: "dominant",
-  stage: "vegetative",
+  stage: "auto",
   soil: "local",
+  farmGoal: "overview",
+  plant: "seasonalFlowers",
+  gardenSetting: "container",
+  gardenSoil: "unknown",
+  gardenGoal: "overview",
   selectedState: "DE2",
   selectedDistrict: null,
   selectedBasin: null
@@ -33,6 +45,11 @@ export function parseViewState(search = "") {
   const crop = params.get("crop");
   const stage = params.get("stage");
   const soil = params.get("soil");
+  const farmGoal = params.get("farmGoal");
+  const plant = params.get("plant");
+  const gardenSetting = params.get("setting");
+  const gardenSoil = params.get("gardenSoil");
+  const gardenGoal = params.get("gardenGoal");
   return {
     date: isIsoDate(date) ? date : DEFAULT_VIEW.date,
     level: LEVELS.has(level) ? level : DEFAULT_VIEW.level,
@@ -42,6 +59,14 @@ export function parseViewState(search = "") {
     crop: Object.hasOwn(FIELD_CONTEXTS.crops, crop) ? crop : DEFAULT_VIEW.crop,
     stage: Object.hasOwn(FIELD_CONTEXTS.stages, stage) ? stage : DEFAULT_VIEW.stage,
     soil: Object.hasOwn(FIELD_CONTEXTS.soils, soil) ? soil : DEFAULT_VIEW.soil,
+    farmGoal: Object.hasOwn(FARM_GOALS, farmGoal) ? farmGoal : DEFAULT_VIEW.farmGoal,
+    plant: Object.hasOwn(HORTICULTURE_CONTEXTS.plants, plant) ? plant : DEFAULT_VIEW.plant,
+    gardenSetting: Object.hasOwn(HORTICULTURE_CONTEXTS.settings, gardenSetting)
+      ? gardenSetting : DEFAULT_VIEW.gardenSetting,
+    gardenSoil: Object.hasOwn(HORTICULTURE_CONTEXTS.soils, gardenSoil)
+      ? gardenSoil : DEFAULT_VIEW.gardenSoil,
+    gardenGoal: Object.hasOwn(HORTICULTURE_CONTEXTS.goals, gardenGoal)
+      ? gardenGoal : DEFAULT_VIEW.gardenGoal,
     selectedState: optionalId(params, "state", /^DE[A-Z0-9]$/) || DEFAULT_VIEW.selectedState,
     selectedDistrict: optionalId(params, "district", /^DE[A-Z0-9]{3}$/),
     selectedBasin: optionalId(params, "basin", /^\d+$/)
@@ -122,6 +147,11 @@ export function serializeViewState(view) {
     crop: view.crop,
     stage: view.stage,
     soil: view.soil,
+    farmGoal: view.farmGoal,
+    plant: view.plant,
+    setting: view.gardenSetting,
+    gardenSoil: view.gardenSoil,
+    gardenGoal: view.gardenGoal,
     state: view.selectedState
   });
   if (view.date) params.set("date", view.date);

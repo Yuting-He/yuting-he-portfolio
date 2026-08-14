@@ -35,7 +35,7 @@
           <h1 id="demo-title">HeatLens Germany</h1>
           <p>
             Official warnings, measured DWD/RADOLAN checks, soil-water percentiles, and ICON ensemble-member dispersion are translated into
-            staged, low-regret checks for residents, farms, and municipalities. HeatLens supports decisions; it does not reissue warnings.
+            staged, low-regret checks for residents, farms, gardeners, and municipalities. HeatLens supports decisions; it does not reissue warnings.
           </p>
         </div>
         <div class="scenario-context" aria-label="Model architecture">
@@ -95,6 +95,7 @@
             <div class="control-buttons" role="group" aria-label="Audience selection">
               <button class="control-button is-active" type="button" data-audience="residents" aria-pressed="true">Residents</button>
               <button class="control-button" type="button" data-audience="farmers" aria-pressed="false">Farmers</button>
+              <button class="control-button" type="button" data-audience="gardeners" aria-pressed="false">Gardeners</button>
               <button class="control-button" type="button" data-audience="municipal" aria-pressed="false">Municipal</button>
             </div>
           </fieldset>
@@ -124,11 +125,18 @@
                   <option value="grass">Grassland</option>
                   <option value="maize">Maize</option>
                   <option value="winterWheat">Winter wheat</option>
+                  <option value="winterBarley">Winter barley</option>
+                  <option value="potato">Potato</option>
+                  <option value="sugarBeet">Sugar beet</option>
+                  <option value="oilseedRape">Winter oilseed rape</option>
+                  <option value="orchard">Fruit orchard</option>
                 </select>
               </label>
               <label for="crop-stage">
                 Growth stage
                 <select id="crop-stage">
+                  <option value="auto">Auto from selected date</option>
+                  <option value="dormant">Dormant / outside main season</option>
                   <option value="establishment">Establishment</option>
                   <option value="vegetative">Vegetative</option>
                   <option value="flowering">Flowering / yield formation</option>
@@ -144,8 +152,60 @@
                   <option value="clay">Clayey override</option>
                 </select>
               </label>
+              <label for="farm-goal">
+                Advice focus
+                <select id="farm-goal">
+                  <option value="overview">Overall field check</option>
+                  <option value="irrigation">Irrigation planning</option>
+                  <option value="fieldAccess">Field access and waterlogging</option>
+                  <option value="workTiming">Outdoor work timing</option>
+                </select>
+              </label>
             </div>
-            <span class="control-note">DWD AMBAV values use the local BUEK1000 profile; overrides are scenarios, not mapped observations.</span>
+            <span class="control-note">Auto stage is a month-based German planning estimate and can be overridden. Maize, winter wheat, grass, and local dominant land use use direct DWD profiles; other crops use a clearly labelled reference profile.</span>
+          </fieldset>
+          <fieldset class="control-group field-context" id="garden-context" hidden>
+            <legend>Garden context</legend>
+            <div class="field-context-controls">
+              <label for="plant-profile">
+                Plant type
+                <select id="plant-profile">
+                  <option value="seasonalFlowers">Seasonal flowers and bedding plants</option>
+                  <option value="herbaceousPerennials">Herbaceous perennials</option>
+                  <option value="rosesShrubs">Roses and ornamental shrubs</option>
+                  <option value="newlyPlantedWoody">Newly planted trees and shrubs</option>
+                  <option value="establishedWoody">Established trees and shrubs</option>
+                  <option value="droughtTolerant">Drought-tolerant Mediterranean plants</option>
+                </select>
+              </label>
+              <label for="garden-setting">
+                Growing place
+                <select id="garden-setting">
+                  <option value="container">Container or balcony</option>
+                  <option value="openGround">Open ground</option>
+                  <option value="rainShadow">Wall / eave rain shadow</option>
+                </select>
+              </label>
+              <label for="garden-soil">
+                Drainage
+                <select id="garden-soil">
+                  <option value="unknown">Unknown / mixed</option>
+                  <option value="freeDraining">Free-draining</option>
+                  <option value="moistureRetentive">Moisture-retentive</option>
+                  <option value="poorDrainage">Poor drainage</option>
+                </select>
+              </label>
+              <label for="garden-goal">
+                Advice focus
+                <select id="garden-goal">
+                  <option value="overview">Overall plant check</option>
+                  <option value="watering">Watering decision</option>
+                  <option value="heatProtection">Heat protection</option>
+                  <option value="waterlogging">Waterlogging and drainage</option>
+                </select>
+              </label>
+            </div>
+            <span class="control-note">No sensor is required: advice combines regional conditions with simple checks of the actual pot, root area, plant condition, and drainage.</span>
           </fieldset>
         </div>
 
@@ -186,6 +246,7 @@
               <span id="risk-level" class="risk-level">Loading</span>
             </div>
             <p id="region-summary" class="region-summary"></p>
+            <p id="personalisation-summary" class="personalisation-summary" role="status" aria-live="polite" hidden></p>
             <div class="explanation-heading">
               <p class="section-label" id="signal-heading">What this means</p>
               <span id="detail-mode-note">Plain language</span>
@@ -233,7 +294,7 @@
             <p class="decision-note" id="decision-note"></p>
             <p class="plain-source-summary" id="plain-source-summary"></p>
             <dl class="provenance-list" id="provenance-list" aria-label="Data provenance" hidden>
-              <div><dt>Index model</dt><dd id="model-version">v0.7.0-observed-eps</dd></div>
+              <div><dt>Index model</dt><dd id="model-version">v0.8.0-guided-personalisation</dd></div>
               <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON + ICON-EPS</dd></div>
               <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>
               <div><dt>Operational status</dt><dd id="operational-status">Screening only</dd></div>
@@ -263,8 +324,8 @@
             </article>
             <article>
               <span>03</span>
-              <h3>Apply crop and soil context safely</h3>
-              <p>Farmers can select DWD-supported crops, growth stage, and a soil scenario. The result changes prioritisation and checks, never an automatic irrigation volume or harvest decision.</p>
+              <h3>Translate conditions into plant-specific checks</h3>
+              <p>Farmers can combine crop, date-estimated or manual growth stage, soil, and decision focus. Gardeners can choose plant type, growing place, drainage, and concern. Both paths change priorities without inventing an irrigation amount or harvest decision.</p>
             </article>
           </div>
         </div>

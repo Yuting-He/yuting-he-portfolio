@@ -2,12 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   FIELD_CONTEXTS,
+  HORTICULTURE_CONTEXTS,
   aggregatePredictions,
   actionsFor,
   buildLiveBasinPrediction,
   evidenceConfidence,
   freshnessStatus,
+  horticultureSeason,
   isIsoDate,
+  resolveCropStage,
   scoreForLayer
 } from "../heatwave-model.js";
 
@@ -190,6 +193,152 @@ test("crop stage selects a measured root-zone depth and changes farmer prioritis
   });
   assert.equal(partial.dwdNfkCoveragePct, 50);
   assert.equal(partial.dwdNfkPct, null);
+});
+
+test("automatic crop stage follows the selected date and remains manually overridable", () => {
+  assert.equal(resolveCropStage("maize", "2026-07-20"), "flowering");
+  assert.equal(resolveCropStage("winterWheat", "2026-07-20"), "maturity");
+  assert.equal(resolveCropStage("winterWheat", "2026-01-20"), "dormant");
+  assert.equal(resolveCropStage("maize", "2026-07-20", "establishment"), "establishment");
+  assert.equal(horticultureSeason("2026-07-20").key, "summerStress");
+  assert.throws(() => resolveCropStage("maize", "20-07-2026"), /ISO forecast date/);
+});
+
+test("additional crops disclose whether their DWD water profile is direct or a proxy", () => {
+  const prediction = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    dwdNfkDominant60Pct: 38,
+    dwdNfkWinterWheat60Pct: 42
+  });
+  const potato = aggregatePredictions([prediction], {
+    audience: "farmers",
+    crop: "potato",
+    stage: "vegetative"
+  });
+  const wheat = aggregatePredictions([prediction], {
+    audience: "farmers",
+    crop: "winterWheat",
+    stage: "vegetative"
+  });
+  assert.equal(potato.cropWaterProfileExact, false);
+  assert.match(potato.cropWaterProfileLabel, /reference profile/i);
+  assert.equal(wheat.cropWaterProfileExact, true);
+});
+
+test("garden impact and advice respond to plant type, growing place, season, and weather", () => {
+  const prediction = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    tmaxC: 35,
+    apparentMaxC: 38,
+    et0Mm: 6,
+    dwdNfkDominant30Pct: 34,
+    dwdNfkDominant60Pct: 40,
+    dwdNfkDominant90Pct: 46
+  });
+  const containerFlowers = aggregatePredictions([prediction], {
+    audience: "gardeners",
+    plant: "seasonalFlowers",
+    gardenSetting: "container",
+    gardenSoil: "freeDraining",
+    gardenGoal: "watering"
+  });
+  const establishedTree = aggregatePredictions([prediction], {
+    audience: "gardeners",
+    plant: "establishedWoody",
+    gardenSetting: "openGround",
+    gardenSoil: "moistureRetentive",
+    gardenGoal: "watering"
+  });
+  assert.ok(containerFlowers.dryStressScore > establishedTree.dryStressScore);
+  assert.ok(containerFlowers.impactScore > establishedTree.impactScore);
+  assert.equal(containerFlowers.gardenSeason, "summerStress");
+  assert.equal(containerFlowers.rootDepthCm, 30);
+  assert.equal(establishedTree.rootDepthCm, 90);
+  assert.equal(HORTICULTURE_CONTEXTS.plants.newlyPlantedWoody.sensitivity, 88);
+
+  const flowerText = actionsFor(containerFlowers, "gardeners").actions.map((item) => item.text).join(" ");
+  const treeText = actionsFor(establishedTree, "gardeners").actions.map((item) => item.text).join(" ");
+  assert.match(flowerText, /2-3 cm|pot weight/i);
+  assert.match(treeText, /dry surface alone|prolonged drought/i);
+  assert.doesNotMatch(`${flowerText} ${treeText}`, /litres?|l\/m(?:2|²)|application volume/i);
+});
+
+test("garden watering advice defers to forecast rain and local root checks", () => {
+  const metrics = aggregatePredictions([buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    precipitationMm: 12,
+    dwdNfkDominant30Pct: 55
+  })], {
+    audience: "gardeners",
+    gardenGoal: "watering",
+    gardenSetting: "rainShadow"
+  });
+  const text = actionsFor(metrics, "gardeners").actions.map((item) => item.text).join(" ");
+  assert.match(text, /rain is forecast/i);
+  assert.match(text, /under eaves may still be dry/i);
+});
+
+test("every published farm and garden profile produces finite, complete guidance", () => {
+  const prediction = buildLiveBasinPrediction(basin, {
+    ...mildDay,
+    dwdNfkDominant30Pct: 45,
+    dwdNfkDominant60Pct: 42,
+    dwdNfkDominant90Pct: 40,
+    dwdNfkGrass30Pct: 46,
+    dwdNfkGrass60Pct: 43,
+    dwdNfkGrass90Pct: 41,
+    dwdNfkMaize30Pct: 44,
+    dwdNfkMaize60Pct: 40,
+    dwdNfkMaize90Pct: 38,
+    dwdNfkWinterWheat30Pct: 48,
+    dwdNfkWinterWheat60Pct: 44,
+    dwdNfkWinterWheat90Pct: 42
+  });
+  for (const crop of Object.keys(FIELD_CONTEXTS.crops)) {
+    for (const stage of Object.keys(FIELD_CONTEXTS.stages)) {
+      const metrics = aggregatePredictions([prediction], { audience: "farmers", crop, stage });
+      const guidance = actionsFor(metrics, "farmers");
+      assert.ok(Number.isFinite(metrics.impactScore));
+      assert.doesNotMatch(JSON.stringify(guidance), /undefined|NaN/);
+    }
+  }
+  for (const plant of Object.keys(HORTICULTURE_CONTEXTS.plants)) {
+    for (const gardenSetting of Object.keys(HORTICULTURE_CONTEXTS.settings)) {
+      for (const gardenSoil of Object.keys(HORTICULTURE_CONTEXTS.soils)) {
+        const metrics = aggregatePredictions([prediction], {
+          audience: "gardeners",
+          plant,
+          gardenSetting,
+          gardenSoil
+        });
+        const guidance = actionsFor(metrics, "gardeners");
+        assert.ok(Number.isFinite(metrics.impactScore));
+        assert.ok(guidance.actions.length >= 3 && guidance.actions.length <= 5);
+        assert.doesNotMatch(JSON.stringify(guidance), /undefined|NaN/);
+      }
+    }
+  }
+});
+
+test("advice focus produces one visibly marked priority without changing the environmental score", () => {
+  const prediction = buildLiveBasinPrediction(basin, mildDay);
+  const farmOutputs = ["overview", "irrigation", "fieldAccess", "workTiming"].map((farmGoal) => {
+    const metrics = aggregatePredictions([prediction], { audience: "farmers", farmGoal });
+    const guidance = actionsFor(metrics, "farmers");
+    assert.equal(guidance.actions.filter((item) => item.focus).length, 1);
+    return { impactScore: metrics.impactScore, focus: guidance.actions.find((item) => item.focus).category };
+  });
+  assert.equal(new Set(farmOutputs.map((item) => item.impactScore)).size, 1);
+  assert.equal(new Set(farmOutputs.map((item) => item.focus)).size, 4);
+
+  const gardenOutputs = ["overview", "watering", "heatProtection", "waterlogging"].map((gardenGoal) => {
+    const metrics = aggregatePredictions([prediction], { audience: "gardeners", gardenGoal });
+    const guidance = actionsFor(metrics, "gardeners");
+    assert.equal(guidance.actions.filter((item) => item.focus).length, 1);
+    return { impactScore: metrics.impactScore, focus: guidance.actions.find((item) => item.focus).category };
+  });
+  assert.equal(new Set(gardenOutputs.map((item) => item.impactScore)).size, 1);
+  assert.equal(new Set(gardenOutputs.map((item) => item.focus)).size, 4);
 });
 
 test("ensemble dispersion and observed validation produce an auditable evidence grade", () => {

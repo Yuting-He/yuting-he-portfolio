@@ -37,3 +37,6 @@ The interface links to, but does not copy, these additional authority services:
 
 - DWD 1991-2020 soil-moisture percentile maps: <https://www.dwd.de/DE/leistungen/bofeu_analyse/bfana.html>
 - German state flood portals: <https://www.hochwasserzentralen.de/>
+- German Federal Information Centre for Agriculture garden adaptation and watering guidance: <https://www.landwirtschaft.de/garten/selbst-anbauen/klimawandel-wie-passe-ich-meinen-garten-an> and <https://www.landwirtschaft.de/garten/selbst-anbauen/umweltfreundlich-gaertnern/pflanzen-richtig-giessen-im-garten-wasser-sparen>
+- Royal Horticultural Society general watering guidance: <https://www.rhs.org.uk/garden-jobs/watering>
+- FAO crop evapotranspiration and crop-water guidance: <https://www.fao.org/4/X0490E/x0490e0b.htm> and <https://www.fao.org/4/s2022e/s2022e07.htm>
