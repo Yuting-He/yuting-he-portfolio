@@ -52,6 +52,7 @@ test("plain-language labels adapt to each decision lens without exposing technic
   for (const [audience, expectedGroundLabel] of [
     ["residents", "Soil and plants"],
     ["farmers", "Field water"],
+    ["gardeners", "Plants and root conditions"],
     ["municipal", "Ground and green spaces"]
   ]) {
     const signals = plainLanguageSignals(baseMetrics, audience, "impact");
@@ -108,7 +109,7 @@ test("technical action categories are translated into clear decision gates", () 
 });
 
 test("plain role actions stay understandable and preserve human decision gates", () => {
-  for (const audience of ["residents", "farmers", "municipal"]) {
+  for (const audience of ["residents", "farmers", "gardeners", "municipal"]) {
     const actions = plainActionsFor(baseMetrics, audience, { heatWarningCount: 1 });
     const combined = actions.flatMap(Object.values).join(" ");
     assert.ok(actions.length >= 2 && actions.length <= 5);
@@ -116,9 +117,42 @@ test("plain role actions stay understandable and preserve human decision gates",
   }
   const farmActions = plainActionsFor(baseMetrics, "farmers");
   assert.match(farmActions.at(-1).text, /Do not change harvest timing, irrigation amount/i);
+  const gardenActions = plainActionsFor({
+    ...baseMetrics,
+    plant: "newlyPlantedWoody",
+    plantLabel: "Newly planted trees and shrubs",
+    gardenSetting: "openGround",
+    gardenGoal: "watering",
+    gardenSeason: "summerStress"
+  }, "gardeners");
+  assert.match(gardenActions.map((item) => item.text).join(" "), /root ball/i);
+  assert.match(plainDecisionNote("gardeners"), /actual pot, bed/i);
   const municipalActions = plainActionsFor(baseMetrics, "municipal");
   assert.match(municipalActions.at(-1).text, /responsible authority/i);
   assert.doesNotMatch([...farmActions, ...municipalActions].flatMap(Object.values).join(" "), /\b(?:11:00|12:00|17:00|18:00)\b/);
+});
+
+test("plain farm and garden focus selects exactly one distinct priority action", () => {
+  const farmCategories = ["overview", "irrigation", "fieldAccess", "workTiming"].map((farmGoal) => {
+    const actions = plainActionsFor({ ...baseMetrics, farmGoal }, "farmers");
+    assert.equal(actions.filter((item) => item.focus).length, 1);
+    return actions.find((item) => item.focus).category;
+  });
+  const gardenCategories = ["overview", "watering", "heatProtection", "waterlogging"].map((gardenGoal) => {
+    const actions = plainActionsFor({
+      ...baseMetrics,
+      plant: "seasonalFlowers",
+      plantLabel: "Seasonal flowers",
+      gardenSetting: "container",
+      gardenGoal,
+      gardenSeason: "summerStress",
+      gardenSeasonLabel: "summer heat and water-demand season"
+    }, "gardeners");
+    assert.equal(actions.filter((item) => item.focus).length, 1);
+    return actions.find((item) => item.focus).category;
+  });
+  assert.equal(new Set(farmCategories).size, 4);
+  assert.equal(new Set(gardenCategories).size, 4);
 });
 
 test("plain source summary expands institution names instead of relying on acronyms", () => {

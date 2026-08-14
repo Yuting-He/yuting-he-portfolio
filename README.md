@@ -10,17 +10,18 @@ Personal portfolio for environmental engineering, statistics, geospatial NatCat 
 - live DWD ICON forcing plus ICON-D2/EU/Global daily ensemble means and hourly member standard deviations
 - matched DWD station-temperature bias/MAE and RADOLAN rolling 24-hour precipitation checks
 - UFZ topsoil and total-soil SMI plus plant-available water
-- DWD AMBAV crop-specific nFK using local BÜK1000 soil profiles, averaged from 10 cm layers to 30/60/90 cm
+- DWD AMBAV crop-specific nFK using local BUEK1000 soil profiles, averaged from 10 cm layers to 30/60/90 cm
 - separately displayed official DWD heat and heavy/persistent-rain warning context
 - two retrospective and seven forecast dates
 - 614 Germany-clipped HydroBASINS Level 8 prediction units
 - exact sub-basin x NUTS-3 overlap weights in EPSG:3035
 - 400 NUTS-3 district / urban-district views and 16 state summaries
 - GISCO 2024 1:1M boundaries over an OpenStreetMap base map
-- resident, farmer, and municipal decision lenses
-- farmer crop, growth-stage, and soil-profile scenarios with explicit irreversible-action gates
+- resident, farmer, gardener, and municipal decision lenses
+- nine farm crop profiles, date-estimated or manual growth stage, soil scenarios, and task-specific advice focus
+- six ornamental-plant profiles with container/open-ground/rain-shadow and drainage context
 - separate heat, dry-stress, excess-water, and role-specific impact screening layers
-- staged low-regret actions and explicit human-verification gates for residents, farmers, and municipal teams
+- staged low-regret actions and explicit human-verification gates for residents, farmers, gardeners, and municipal teams
 - direct escalation links to DWD warnings, the German state flood portals, and the UFZ soil-water monitor
 - shareable URL state and JSON snapshot export
 - per-source freshness, source completeness, spatial coverage, station-distance, and ensemble-dispersion evidence grades
@@ -37,6 +38,8 @@ The current impact layer still uses explicit urban/rural exposure and crop-sensi
 
 HeatLens opens in a plain-language explanation mode that translates the selected heat and soil-water signals into an overall situation, heat meaning, ground or crop meaning, rain and standing-water meaning, confidence, and role-specific next actions. Technical detail remains available in the same interface with exact parameters, source timestamps, and model provenance. The selected explanation mode is included in shareable URLs and JSON exports.
 
+Personalised farm and garden advice is deterministic and runs in the browser, so the public demo has no per-query AI charge and no exposed API key. Crop or plant selections change transparent thresholds, context, and action ordering. A future language-model layer may parse questions or rewrite the same approved actions, but it must not create irrigation volumes, harvest decisions, or unsupported diagnoses.
+
 Node.js 20 or newer is required.
 
 ```bash
@@ -48,6 +51,12 @@ Open <http://127.0.0.1:4173/> and run all tests with:
 
 ```bash
 npm test
+```
+
+`npm run serve` uses the last validated snapshot committed to the repository and therefore also works offline. To download the current nine-day window and then start the local site, use:
+
+```bash
+npm run serve:live
 ```
 
 Refresh the live snapshot with internet access:

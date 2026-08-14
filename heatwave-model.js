@@ -1,9 +1,10 @@
-export const MODEL_VERSION = "0.7.0-observed-eps";
-export const RECOMMENDATION_POLICY_VERSION = "0.7.0";
+export const MODEL_VERSION = "0.8.0-guided-personalisation";
+export const RECOMMENDATION_POLICY_VERSION = "0.8.0";
 
 export const AUDIENCES = {
   residents: "Residents",
   farmers: "Farmers",
+  gardeners: "Gardeners",
   municipal: "Municipal"
 };
 
@@ -16,12 +17,46 @@ export const LAYERS = {
 
 export const FIELD_CONTEXTS = Object.freeze({
   crops: Object.freeze({
-    dominant: Object.freeze({ label: "Local dominant land use", fieldPrefix: "dwdNfkDominant", sensitivity: 55 }),
-    grass: Object.freeze({ label: "Grassland", fieldPrefix: "dwdNfkGrass", sensitivity: 45 }),
-    maize: Object.freeze({ label: "Maize", fieldPrefix: "dwdNfkMaize", sensitivity: 75 }),
-    winterWheat: Object.freeze({ label: "Winter wheat", fieldPrefix: "dwdNfkWinterWheat", sensitivity: 65 })
+    dominant: Object.freeze({
+      label: "Local dominant land use", fieldPrefix: "dwdNfkDominant", sensitivity: 55,
+      waterProfileLabel: "DWD local dominant-land-use profile", exactWaterProfile: true
+    }),
+    grass: Object.freeze({
+      label: "Grassland", fieldPrefix: "dwdNfkGrass", sensitivity: 45,
+      waterProfileLabel: "DWD grass profile", exactWaterProfile: true
+    }),
+    maize: Object.freeze({
+      label: "Maize", fieldPrefix: "dwdNfkMaize", sensitivity: 75,
+      waterProfileLabel: "DWD maize profile", exactWaterProfile: true
+    }),
+    winterWheat: Object.freeze({
+      label: "Winter wheat", fieldPrefix: "dwdNfkWinterWheat", sensitivity: 65,
+      waterProfileLabel: "DWD winter-wheat profile", exactWaterProfile: true
+    }),
+    winterBarley: Object.freeze({
+      label: "Winter barley", fieldPrefix: "dwdNfkWinterWheat", sensitivity: 62,
+      waterProfileLabel: "DWD winter-wheat reference profile", exactWaterProfile: false
+    }),
+    potato: Object.freeze({
+      label: "Potato", fieldPrefix: "dwdNfkDominant", sensitivity: 78,
+      waterProfileLabel: "DWD local land-use reference profile", exactWaterProfile: false
+    }),
+    sugarBeet: Object.freeze({
+      label: "Sugar beet", fieldPrefix: "dwdNfkDominant", sensitivity: 64,
+      waterProfileLabel: "DWD local land-use reference profile", exactWaterProfile: false
+    }),
+    oilseedRape: Object.freeze({
+      label: "Winter oilseed rape", fieldPrefix: "dwdNfkWinterWheat", sensitivity: 68,
+      waterProfileLabel: "DWD winter-wheat reference profile", exactWaterProfile: false
+    }),
+    orchard: Object.freeze({
+      label: "Fruit orchard", fieldPrefix: "dwdNfkDominant", sensitivity: 72,
+      waterProfileLabel: "DWD local land-use reference profile", exactWaterProfile: false
+    })
   }),
   stages: Object.freeze({
+    auto: Object.freeze({ label: "Auto from selected date" }),
+    dormant: Object.freeze({ label: "Dormant / outside main season", sensitivity: 20, rootDepthCm: 90 }),
     establishment: Object.freeze({ label: "Establishment", sensitivity: 70, rootDepthCm: 30 }),
     vegetative: Object.freeze({ label: "Vegetative", sensitivity: 55, rootDepthCm: 60 }),
     flowering: Object.freeze({ label: "Flowering / yield formation", sensitivity: 85, rootDepthCm: 90 }),
@@ -33,6 +68,65 @@ export const FIELD_CONTEXTS = Object.freeze({
     loam: Object.freeze({ label: "Loamy override", dryAdjustment: 1, wetAdjustment: 1 }),
     clay: Object.freeze({ label: "Clayey override", dryAdjustment: -2, wetAdjustment: 8 })
   })
+});
+
+export const FARM_GOALS = Object.freeze({
+  overview: Object.freeze({ label: "Overall field check" }),
+  irrigation: Object.freeze({ label: "Irrigation planning" }),
+  fieldAccess: Object.freeze({ label: "Field access and waterlogging" }),
+  workTiming: Object.freeze({ label: "Outdoor work timing" })
+});
+
+export const HORTICULTURE_CONTEXTS = Object.freeze({
+  plants: Object.freeze({
+    seasonalFlowers: Object.freeze({
+      label: "Seasonal flowers and bedding plants", sensitivity: 82, rootDepthCm: 30, checkDepthCm: 3
+    }),
+    herbaceousPerennials: Object.freeze({
+      label: "Herbaceous perennials", sensitivity: 58, rootDepthCm: 30, checkDepthCm: 15
+    }),
+    rosesShrubs: Object.freeze({
+      label: "Roses and ornamental shrubs", sensitivity: 66, rootDepthCm: 60, checkDepthCm: 15
+    }),
+    newlyPlantedWoody: Object.freeze({
+      label: "Newly planted trees and shrubs", sensitivity: 88, rootDepthCm: 60, checkDepthCm: 20
+    }),
+    establishedWoody: Object.freeze({
+      label: "Established trees and shrubs", sensitivity: 42, rootDepthCm: 90, checkDepthCm: 20
+    }),
+    droughtTolerant: Object.freeze({
+      label: "Drought-tolerant Mediterranean plants", sensitivity: 28, rootDepthCm: 30, checkDepthCm: 10
+    })
+  }),
+  settings: Object.freeze({
+    container: Object.freeze({ label: "Container or balcony", dryAdjustment: 11, wetAdjustment: 5 }),
+    openGround: Object.freeze({ label: "Open ground", dryAdjustment: 0, wetAdjustment: 0 }),
+    rainShadow: Object.freeze({ label: "Wall / eave rain shadow", dryAdjustment: 7, wetAdjustment: -2 })
+  }),
+  soils: Object.freeze({
+    unknown: Object.freeze({ label: "Unknown / mixed", dryAdjustment: 0, wetAdjustment: 0 }),
+    freeDraining: Object.freeze({ label: "Free-draining", dryAdjustment: 5, wetAdjustment: -5 }),
+    moistureRetentive: Object.freeze({ label: "Moisture-retentive", dryAdjustment: -2, wetAdjustment: 4 }),
+    poorDrainage: Object.freeze({ label: "Poor drainage", dryAdjustment: -3, wetAdjustment: 10 })
+  }),
+  goals: Object.freeze({
+    overview: Object.freeze({ label: "Overall plant check" }),
+    watering: Object.freeze({ label: "Watering decision" }),
+    heatProtection: Object.freeze({ label: "Heat protection" }),
+    waterlogging: Object.freeze({ label: "Waterlogging and drainage" })
+  })
+});
+
+const MONTHLY_CROP_STAGES = Object.freeze({
+  dominant: ["dormant", "dormant", "dormant", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "dormant", "dormant"],
+  grass: ["dormant", "dormant", "dormant", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "vegetative", "dormant", "dormant"],
+  maize: ["dormant", "dormant", "dormant", "establishment", "establishment", "vegetative", "flowering", "flowering", "maturity", "maturity", "dormant", "dormant"],
+  winterWheat: ["dormant", "dormant", "vegetative", "vegetative", "vegetative", "flowering", "maturity", "maturity", "dormant", "establishment", "establishment", "dormant"],
+  winterBarley: ["dormant", "dormant", "vegetative", "vegetative", "flowering", "maturity", "maturity", "dormant", "dormant", "establishment", "establishment", "dormant"],
+  potato: ["dormant", "dormant", "dormant", "establishment", "establishment", "vegetative", "flowering", "maturity", "maturity", "dormant", "dormant", "dormant"],
+  sugarBeet: ["dormant", "dormant", "establishment", "establishment", "vegetative", "vegetative", "vegetative", "flowering", "flowering", "maturity", "dormant", "dormant"],
+  oilseedRape: ["dormant", "dormant", "vegetative", "vegetative", "flowering", "maturity", "maturity", "establishment", "establishment", "vegetative", "dormant", "dormant"],
+  orchard: ["dormant", "dormant", "flowering", "flowering", "flowering", "flowering", "flowering", "maturity", "maturity", "maturity", "dormant", "dormant"]
 });
 
 const PREDICTION_FIELDS = [
@@ -56,7 +150,7 @@ const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 const round = (value, digits = 0) => Number(value.toFixed(digits));
 const normalized = (value, min, max) => clamp((value - min) / (max - min), 0, 1) * 100;
 const reverseNormalized = (value, wet, dry) => normalized(wet - value, 0, wet - dry);
-const action = (category, text) => ({ category, text });
+const action = (category, text, focus = false) => ({ category, text, focus });
 const optionalNumber = (value, digits = 1) => Number.isFinite(value) ? round(value, digits) : null;
 
 function weightedBlend(parts) {
@@ -70,6 +164,25 @@ export function isIsoDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function resolveCropStage(crop, date, requestedStage = "auto") {
+  if (!Object.hasOwn(FIELD_CONTEXTS.crops, crop)) throw new RangeError(`Unknown crop profile: ${crop}`);
+  if (!Object.hasOwn(FIELD_CONTEXTS.stages, requestedStage)) {
+    throw new RangeError(`Unknown crop stage: ${requestedStage}`);
+  }
+  if (requestedStage !== "auto") return requestedStage;
+  if (!isIsoDate(date)) throw new TypeError("Automatic crop stage requires an ISO forecast date");
+  return MONTHLY_CROP_STAGES[crop][Number(date.slice(5, 7)) - 1];
+}
+
+export function horticultureSeason(date) {
+  if (!isIsoDate(date)) throw new TypeError("Garden season requires an ISO forecast date");
+  const month = Number(date.slice(5, 7));
+  if (month <= 2 || month === 12) return { key: "dormant", label: "winter / dormant season" };
+  if (month <= 5) return { key: "establishment", label: "spring establishment season" };
+  if (month <= 8) return { key: "summerStress", label: "summer heat and water-demand season" };
+  return { key: "recovery", label: "autumn recovery and establishment season" };
 }
 
 export function freshnessStatus(generatedAt, now = Date.now()) {
@@ -177,8 +290,13 @@ export function aggregatePredictions(predictions, {
   exposure = 50,
   cropSensitivity = 55,
   crop = "dominant",
-  stage = "vegetative",
-  soil = "local"
+  stage = "auto",
+  soil = "local",
+  farmGoal = "overview",
+  plant = "seasonalFlowers",
+  gardenSetting = "container",
+  gardenSoil = "unknown",
+  gardenGoal = "overview"
 } = {}) {
   if (!predictions.length) throw new Error("At least one basin prediction is required");
   if (!Object.hasOwn(AUDIENCES, audience)) throw new RangeError(`Unknown audience: ${audience}`);
@@ -190,9 +308,22 @@ export function aggregatePredictions(predictions, {
   if (!Object.hasOwn(FIELD_CONTEXTS.crops, crop)) throw new RangeError(`Unknown crop profile: ${crop}`);
   if (!Object.hasOwn(FIELD_CONTEXTS.stages, stage)) throw new RangeError(`Unknown crop stage: ${stage}`);
   if (!Object.hasOwn(FIELD_CONTEXTS.soils, soil)) throw new RangeError(`Unknown soil profile: ${soil}`);
+  if (!Object.hasOwn(FARM_GOALS, farmGoal)) throw new RangeError(`Unknown farm goal: ${farmGoal}`);
+  if (!Object.hasOwn(HORTICULTURE_CONTEXTS.plants, plant)) throw new RangeError(`Unknown plant profile: ${plant}`);
+  if (!Object.hasOwn(HORTICULTURE_CONTEXTS.settings, gardenSetting)) throw new RangeError(`Unknown garden setting: ${gardenSetting}`);
+  if (!Object.hasOwn(HORTICULTURE_CONTEXTS.soils, gardenSoil)) throw new RangeError(`Unknown garden soil: ${gardenSoil}`);
+  if (!Object.hasOwn(HORTICULTURE_CONTEXTS.goals, gardenGoal)) throw new RangeError(`Unknown garden goal: ${gardenGoal}`);
+  const forecastDate = predictions[0].date;
   const cropProfile = FIELD_CONTEXTS.crops[crop];
-  const stageProfile = FIELD_CONTEXTS.stages[stage];
+  const resolvedStage = audience === "farmers" ? resolveCropStage(crop, forecastDate, stage) : "vegetative";
+  const stageProfile = FIELD_CONTEXTS.stages[resolvedStage];
   const soilProfile = FIELD_CONTEXTS.soils[soil];
+  const plantProfile = HORTICULTURE_CONTEXTS.plants[plant];
+  const gardenSettingProfile = HORTICULTURE_CONTEXTS.settings[gardenSetting];
+  const gardenSoilProfile = HORTICULTURE_CONTEXTS.soils[gardenSoil];
+  const gardenSeason = horticultureSeason(forecastDate);
+  const waterProfile = audience === "gardeners" ? FIELD_CONTEXTS.crops.dominant : cropProfile;
+  const rootDepthCm = audience === "gardeners" ? plantProfile.rootDepthCm : stageProfile.rootDepthCm;
 
   const metrics = {
     basinCount: new Set(predictions.map((item) => item.id)).size,
@@ -221,11 +352,28 @@ export function aggregatePredictions(predictions, {
       100
     )),
     crop,
-    stage,
+    stage: resolvedStage,
+    requestedStage: stage,
+    stageAuto: audience === "farmers" && stage === "auto",
     soil,
+    farmGoal,
     cropLabel: cropProfile.label,
     stageLabel: stageProfile.label,
-    soilLabel: soilProfile.label
+    soilLabel: soilProfile.label,
+    cropWaterProfileLabel: cropProfile.waterProfileLabel,
+    cropWaterProfileExact: cropProfile.exactWaterProfile,
+    plant,
+    gardenSetting,
+    gardenSoil,
+    gardenGoal,
+    plantLabel: plantProfile.label,
+    plantSensitivity: plantProfile.sensitivity,
+    plantCheckDepthCm: plantProfile.checkDepthCm,
+    gardenSettingLabel: gardenSettingProfile.label,
+    gardenSoilLabel: gardenSoilProfile.label,
+    gardenGoalLabel: HORTICULTURE_CONTEXTS.goals[gardenGoal].label,
+    gardenSeason: gardenSeason.key,
+    gardenSeasonLabel: gardenSeason.label
   };
   for (const field of OPTIONAL_PREDICTION_FIELDS) {
     const value = weightedAverageOptional(predictions, field);
@@ -257,8 +405,10 @@ export function aggregatePredictions(predictions, {
     ).size;
   }
   if (latestTemperatures.length) metrics.dwdLatestTemperatureC = round(Math.max(...latestTemperatures), 1);
-  metrics.rootDepthCm = stageProfile.rootDepthCm;
-  const selectedDwdNfkField = `${cropProfile.fieldPrefix}${stageProfile.rootDepthCm}Pct`;
+  metrics.rootDepthCm = rootDepthCm;
+  metrics.waterProfileLabel = waterProfile.waterProfileLabel;
+  metrics.waterProfileExact = audience === "gardeners" ? false : waterProfile.exactWaterProfile;
+  const selectedDwdNfkField = `${waterProfile.fieldPrefix}${rootDepthCm}Pct`;
   metrics.dwdNfkCoveragePct = round(weightedCoverage(predictions, selectedDwdNfkField));
   metrics.dwdNfkPct = metrics.dwdNfkCoveragePct >= 85 ? metrics[selectedDwdNfkField] : null;
   metrics.ensembleModel = predictions.find((prediction) => prediction.ensembleModel)?.ensembleModel || null;
@@ -267,16 +417,22 @@ export function aggregatePredictions(predictions, {
   ) ? "complete-day" : predictions.find((prediction) => prediction.dwdObservationKind)?.dwdObservationKind || null;
   metrics.dwdStationName = predictions.find((prediction) => prediction.dwdStationName)?.dwdStationName || null;
   metrics.dwdObservedAt = predictions.map((prediction) => prediction.dwdObservedAt).filter(Boolean).sort().at(-1) || null;
+  const dryAdjustment = audience === "gardeners"
+    ? gardenSettingProfile.dryAdjustment + gardenSoilProfile.dryAdjustment
+    : audience === "farmers" ? soilProfile.dryAdjustment : 0;
+  const wetAdjustment = audience === "gardeners"
+    ? gardenSettingProfile.wetAdjustment + gardenSoilProfile.wetAdjustment
+    : audience === "farmers" ? soilProfile.wetAdjustment : 0;
   if (Number.isFinite(metrics.dwdNfkPct)) {
     const cropDrySignal = normalized(50 - metrics.dwdNfkPct, 0, 40);
     const cropWetSignal = normalized(metrics.dwdNfkPct, 90, 135);
     metrics.dryStressScore = round(clamp(0.82 * metrics.dryStressScore + 0.18 * cropDrySignal +
-      soilProfile.dryAdjustment, 0, 100));
+      dryAdjustment, 0, 100));
     metrics.wetStressScore = round(clamp(0.88 * metrics.wetStressScore + 0.12 * cropWetSignal +
-      soilProfile.wetAdjustment, 0, 100));
+      wetAdjustment, 0, 100));
   } else {
-    metrics.dryStressScore = round(clamp(metrics.dryStressScore + soilProfile.dryAdjustment, 0, 100));
-    metrics.wetStressScore = round(clamp(metrics.wetStressScore + soilProfile.wetAdjustment, 0, 100));
+    metrics.dryStressScore = round(clamp(metrics.dryStressScore + dryAdjustment, 0, 100));
+    metrics.wetStressScore = round(clamp(metrics.wetStressScore + wetAdjustment, 0, 100));
   }
   metrics.temperatureValidationErrorC = metrics.temperatureValidationBiasC ?? null;
 
@@ -285,6 +441,8 @@ export function aggregatePredictions(predictions, {
       0.07 * metrics.dryStressScore + 0.08 * metrics.wetStressScore,
     farmers: 0.34 * metrics.dryStressScore + 0.28 * metrics.wetStressScore +
       0.20 * metrics.heatScore + 0.18 * metrics.cropSensitivity,
+    gardeners: 0.38 * metrics.dryStressScore + 0.24 * metrics.wetStressScore +
+      0.20 * metrics.heatScore + 0.18 * metrics.plantSensitivity,
     municipal: 0.50 * metrics.heatScore + 0.22 * metrics.wetStressScore +
       0.18 * metrics.exposure + 0.05 * metrics.dryStressScore +
       0.05 * normalized(metrics.heatPersistenceDays, 0, 4)
@@ -378,11 +536,46 @@ export function actionsFor(metrics, audience, options = {}) {
     : "DWD crop-specific nFK unavailable at this location";
 
   if (audience === "farmers") {
+    const stageBasis = metrics.stageAuto
+      ? `${metrics.stageLabel || "growth stage"}, estimated from the selected date`
+      : `${metrics.stageLabel || "growth stage"}, selected manually`;
     actions.push(action(
       "Verify",
       `Check representative fields for ${metrics.cropLabel || "the selected crop"} at root depth before changing operations. ` +
-      `${nfkStatus}; compare it with field measurements, recent rainfall, the selected ${metrics.stageLabel || "growth stage"}, and local water rules.`
+      `${nfkStatus}; compare it with field measurements, recent rainfall, ${stageBasis}, and local water rules. ` +
+      `${metrics.cropWaterProfileExact ? "The plant-water profile matches the selected DWD crop." : `The water baseline is a ${metrics.cropWaterProfileLabel} proxy.`}`
     ));
+    if (metrics.farmGoal === "overview") {
+      actions.push(action(
+        "Overall field focus",
+        "Review dry stress, excess-water stress, heat, and the crop stage together. Inspect the field condition least likely to be represented by the regional average before changing operations.",
+        true
+      ));
+    } else if (metrics.farmGoal === "irrigation") {
+      actions.push(action(
+        "Irrigation focus",
+        metrics.precipitationMm >= 8 && metrics.dryStressScore < 75
+          ? `About ${metrics.precipitationMm} mm of forecast rain may change the field balance. Recheck measured root-zone moisture after the event before scheduling irrigation.`
+          : `Compare the ${metrics.rootDepthCm} cm modelled root-zone signal with representative field measurements, crop condition, expected rain, system capacity, and the farm's calibrated trigger; HeatLens does not calculate an application depth.`,
+        true
+      ));
+    } else if (metrics.farmGoal === "fieldAccess") {
+      actions.push(action(
+        "Access focus",
+        metrics.wetStressScore >= 35
+          ? "Inspect headlands, low spots, wheelings, and poorly drained soil before traffic; postpone entry where rutting, compaction, erosion, or unsafe access is likely."
+          : "No strong regional saturation signal stands out, but verify low spots, headlands, and the least-drained soil before machinery access.",
+        true
+      ));
+    } else if (metrics.farmGoal === "workTiming") {
+      actions.push(action(
+        "Work timing",
+        metrics.heatScore >= 35
+          ? `Move strenuous work outside ${peakWindow} where feasible, plan water, shade, breaks, and check livestock cooling and drinking-water capacity.`
+          : "No strong heat signal stands out; still check the local hourly forecast, worker exposure, and livestock conditions before fixing the work window.",
+        true
+      ));
+    }
     if (metrics.dryStressScore >= 35) {
       actions.push(action(
         dryBand.label,
@@ -409,15 +602,87 @@ export function actionsFor(metrics, audience, options = {}) {
         `Review heat-sensitive crop stages, livestock water and shade, worker exposure, and time strenuous work outside ${peakWindow}.`
       ));
     }
-    actions.push(action(
+    const safetyGate = action(
       "Do not automate",
       "Do not change harvest timing, irrigation volume, pesticide use, or another costly irreversible operation from this screening index alone; obtain agronomic and local forecast confirmation."
-    ));
+    );
     return {
-      actions: actions.slice(0, 5),
+      actions: [...actions.slice(0, 4), safetyGate],
       dominantHazard: metrics.wetStressScore > metrics.dryStressScore ? "excess water" : "dry stress",
       policyVersion: RECOMMENDATION_POLICY_VERSION,
       note: "Farm guidance is a staged monitoring checklist. Field observations, crop and soil parameters, official forecasts, water rules, labels, and qualified advice remain decisive."
+    };
+  }
+
+  if (audience === "gardeners") {
+    const plant = metrics.plantLabel || "the selected plants";
+    const setting = metrics.gardenSettingLabel || "the selected growing place";
+    const checkDepth = metrics.plantCheckDepthCm || 10;
+    actions.push(action(
+      "Check locally",
+      `For ${plant} in ${setting.toLowerCase()}, check the growing medium and plant condition before acting. ` +
+      `The map describes the surrounding area; a pot, raised bed, wall shadow, and individual root ball can differ sharply.`
+    ));
+
+    const wateringText = (() => {
+      if (metrics.wetStressScore >= 55) {
+        return "Pause routine watering. Empty standing water from containers where appropriate, keep drainage holes open, and wait until the root area has drained before checking again.";
+      }
+      if (metrics.precipitationMm >= 8 && metrics.dryStressScore < 75) {
+        return `Around ${metrics.precipitationMm} mm of rain is forecast. Delay routine watering, then check whether the rain reached the root area; plants under eaves may still be dry.`;
+      }
+      if (metrics.plant === "seasonalFlowers" || metrics.gardenSetting === "container") {
+        return `Check potting mix about 2-3 cm below the surface and use pot weight or visible wilt as a second clue. If it is dry, water the root area in the cooler morning and let excess water drain.`;
+      }
+      if (metrics.plant === "newlyPlantedWoody") {
+        return `Check both the original root ball and nearby soil to about ${checkDepth} cm. Newly planted woody plants need priority during dry spells; wet the root zone slowly and recheck rather than following a fixed calendar.`;
+      }
+      if (metrics.plant === "establishedWoody") {
+        return `Do not react to a dry surface alone. Check to about ${checkDepth} cm and look for persistent stress; established woody plants usually need priority only during prolonged drought.`;
+      }
+      if (metrics.plant === "droughtTolerant") {
+        return `Let the upper soil dry between checks and verify conditions to about ${checkDepth} cm. Avoid routine watering from the map signal alone, because persistently wet roots can be the greater risk.`;
+      }
+      return `Check soil to about ${checkDepth} cm and look for persistent morning wilt. If the root area is dry, water in the cooler morning and recheck before repeating.`;
+    })();
+    const heatText = metrics.heatScore >= 35
+      ? metrics.gardenSetting === "container"
+        ? `With a feels-like peak near ${metrics.apparentMaxC} °C, move vulnerable containers out of harsh afternoon sun where practical, shade the pot itself, and check moisture in the morning.`
+        : `With a feels-like peak near ${metrics.apparentMaxC} °C, protect newly planted or visibly stressed plants from harsh afternoon exposure where practical and avoid pruning or transplanting during peak heat.`
+      : "No strong heat signal stands out; keep the normal local check and avoid adding water solely because the top surface looks dry.";
+    const wetText = metrics.wetStressScore >= 35 || metrics.gardenGoal === "waterlogging"
+      ? metrics.gardenSoil === "poorDrainage"
+        ? "Inspect low spots and the root area for prolonged saturation. Keep off soft soil, clear only safely accessible drainage paths, and move vulnerable containers out of standing water."
+        : "Check saucers, containers, low spots, and slowly drained beds. Delay watering and avoid walking on saturated soil until it has drained."
+      : null;
+    const seasonalText = metrics.gardenSeason === "dormant"
+      ? "This date falls in the winter or dormant season. Reduce routine watering frequency and act only after checking moisture, frost, drainage, and the needs of evergreen or sheltered plants."
+      : metrics.gardenSeason === "summerStress"
+        ? `This date falls in the main heat and water-demand season. With modelled ET0 near ${metrics.et0Mm} mm/day, check vulnerable plants more often, but use the plant and root-zone check rather than a fixed schedule.`
+        : `This date falls in the ${metrics.gardenSeasonLabel}. Give newly planted material priority and keep changes gradual while roots establish or recover.`;
+    const focusedKey = metrics.gardenGoal === "overview" ? "season" : metrics.gardenGoal;
+    const tailored = {
+      watering: action("Watering check", wateringText, focusedKey === "watering"),
+      heatProtection: action("Heat protection", heatText, focusedKey === "heatProtection"),
+      waterlogging: wetText ? action("Drainage check", wetText, focusedKey === "waterlogging") : null,
+      season: action("Overall plant focus", seasonalText, focusedKey === "season")
+    };
+    const goalOrder = {
+      overview: ["season", "watering", "heatProtection", "waterlogging"],
+      watering: ["watering", "season", "heatProtection", "waterlogging"],
+      heatProtection: ["heatProtection", "watering", "season", "waterlogging"],
+      waterlogging: ["waterlogging", "watering", "season", "heatProtection"]
+    };
+    for (const key of goalOrder[metrics.gardenGoal] || goalOrder.overview) {
+      if (tailored[key]) actions.push(tailored[key]);
+    }
+    const official = action("Official check", officialCheck(options));
+    return {
+      actions: [...actions.slice(0, 4), official],
+      dominantHazard: metrics.wetStressScore > Math.max(metrics.dryStressScore, metrics.heatScore)
+        ? "excess water" : metrics.dryStressScore > metrics.heatScore ? "dry stress" : "heat",
+      policyVersion: RECOMMENDATION_POLICY_VERSION,
+      note: "Garden guidance translates regional weather and soil-water signals into observation-led checks. Plant condition, pot or bed moisture, drainage, local restrictions, and product labels remain decisive."
     };
   }
 

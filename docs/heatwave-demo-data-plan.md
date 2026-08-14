@@ -8,7 +8,7 @@ HeatLens is a decision-translation layer, not another official warning system. I
 2. **Screening layer** - transparent 0-100 heat, dry, and excess-water indices explain which model signals deserve attention.
 3. **Decision layer** - role-specific rules order reversible checks, evidence verification, and escalation while blocking unsafe automation.
 
-Residents receive low-regret heat, garden, and local-water prompts. Farmers receive field-verification and operational-readiness prompts, never an autonomous irrigation, harvest, or chemical-use instruction. Municipal teams receive preparedness checks tied to official warnings, state flood information, local plans, observations, and responsible authorities.
+Residents receive low-regret heat and local-water prompts. Farmers receive crop-, stage-, soil-, and task-specific field checks, never an autonomous irrigation, harvest, or chemical-use instruction. Gardeners receive plant-, setting-, drainage-, season-, and weather-specific checks that work without a sensor. Municipal teams receive preparedness checks tied to official warnings, state flood information, local plans, observations, and responsible authorities.
 
 ## Verified German service landscape
 
@@ -23,7 +23,7 @@ Germany already provides substantial monitoring, forecast, and warning infrastru
 | [German flood portal](https://www.hochwasserzentralen.de/) | Official state flood warnings, gauges, and situation reports | Required source for river flooding; meteorological wetness is not flood probability |
 | [DWD Agrowetter irrigation](https://www.dwd.de/DE/leistungen/agrowetter_beregnung/agrobereg.html) | Paid crop-, soil-, and site-specific four-day irrigation advice | Specialised service demonstrating why HeatLens must avoid invented irrigation amounts |
 
-The defensible gap is therefore not missing data. It is the absence of one free, nationwide, short-horizon workflow that jointly presents heat, dry, and excess-water signals and translates them into transparent low-regret checks for three user groups. HeatLens fills that orchestration and communication gap.
+The defensible gap is therefore not missing data. It is the absence of one free, nationwide, short-horizon workflow that jointly presents heat, dry, and excess-water signals and translates them into transparent low-regret checks for four user groups. HeatLens fills that orchestration and communication gap.
 
 ## Connection to `material_prep`
 
@@ -111,20 +111,36 @@ Dry and wet scores remain independent: dry root-zone conditions and short intens
 | --- | --- |
 | Residents | heat 72%, exposure assumption 13%, dry 7%, excess water 8% |
 | Farmers | dry 34%, excess water 28%, heat 20%, crop-sensitivity assumption 18% |
+| Gardeners | dry 38%, excess water 24%, heat 20%, selected plant sensitivity 18% |
 | Municipal | heat 50%, excess water 22%, exposure assumption 18%, dry 5%, heat persistence 5% |
 
-For the farmer lens, DWD crop-specific nFK contributes 18% of the dry-state result and 12% of the wet-state result only when at least 85% of the selected region's area has a valid crop/depth value. Growth stage selects a 30, 60, or 90 cm root zone and changes crop sensitivity. The local DWD/BÜK profile is the default; sandy, loamy, and clayey choices are explicit scenario adjustments rather than mapped observations.
+For the farmer lens, DWD crop-specific nFK contributes 18% of the dry-state result and 12% of the wet-state result only when at least 85% of the selected region's area has a valid crop/depth value. Growth stage selects a 30, 60, or 90 cm root zone and changes crop sensitivity. Maize, winter wheat, grass, and local dominant land use use directly ingested DWD profiles. Winter barley, potato, sugar beet, winter oilseed rape, and orchard are useful decision contexts but use a visibly labelled DWD reference profile rather than claiming crop-specific measurement. Auto stage is a coarse German month-based planning estimate; the user can and should replace it with the observed field stage. The local DWD/BUEK profile is the default; sandy, loamy, and clayey choices are explicit scenario adjustments rather than mapped observations.
+
+For the gardener lens, plant sensitivity, container/open-ground/rain-shadow exposure, and drainage context adjust the dry and wet screening result. The DWD local dominant-land-use profile is only a regional reference at the nearest supported 30, 60, or 90 cm depth. It is never presented as a measurement inside a pot or individual root ball. Advice therefore starts with observation-led checks such as pot weight, moisture below the surface, root-ball versus surrounding soil, visible persistent stress, and standing water.
+
+## Personalisation architecture
+
+Release `0.8.0` uses a deterministic guided-personalisation engine. This is the production choice for the public static demo because it has zero per-query inference cost, needs no secret key, works on ordinary mobile devices, is testable, and keeps consequential advice traceable to approved rules.
+
+The alternative language-model paths remain optional extensions:
+
+- A hosted model API requires a server-side or edge proxy so credentials are never shipped to the browser. Usage is metered, and a public endpoint also needs quotas, rate limits, abuse controls, caching, and monitoring.
+- A free cloud allowance is suitable for development but is not a dependable public-service budget.
+- Browser-local inference avoids an API bill and keeps prompts on-device, but current WebGPU support, model download size, memory use, and mobile performance make it an opt-in enhancement rather than the default.
+
+A future conversational interface should map free text into the existing crop/plant, stage/season, setting, drainage, and advice-focus schema. The deterministic engine must continue to calculate the risk context and allowed actions. A model may explain or rephrase those actions, but must not invent an irrigation amount, diagnosis, pesticide treatment, harvest instruction, or official warning.
 
 Urban/rural exposure remains an explicit placeholder. This prevents the interface from implying that age, health, critical infrastructure, or response-capacity data has already been collected.
 
 ## Recommendation policy
 
-Recommendation policy `0.7.0` uses four internal screening bands: Low, Moderate, High, and Very high. These are not DWD warning levels.
+Recommendation policy `0.8.0` uses four internal screening bands: Low, Moderate, High, and Very high. These are not DWD warning levels.
 
 Every audience receives a different sequence:
 
 - **Residents** - protective timing, vulnerable-person checks, measured garden watering, standing-water precautions, and official-source checks.
-- **Farmers** - representative field measurements, crop-stage and soil verification, dry/wet/heat readiness, and an explicit prohibition on autonomous harvest, irrigation-volume, pesticide, or other irreversible decisions.
+- **Farmers** - representative field measurements, date-estimated or manual crop stage, crop/profile provenance, task focus, dry/wet/heat readiness, and an explicit prohibition on autonomous harvest, irrigation-volume, pesticide, or other irreversible decisions.
+- **Gardeners** - selected ornamental-plant and growing-place checks, forecast-rain deferral, heat protection, drainage checks, seasonal context, and local watering-rule verification.
 - **Municipal teams** - official-source verification, heat-plan readiness, drainage and access checks, public-green-space triage, and a responsible-authority activation gate.
 
 Official warning counts affect the wording and urgency of verification only when the warning's Berlin-time start/end interval overlaps the selected date. They never enter the custom 0-100 score. The current feed is not presented as a retrospective archive or a warning forecast for the full horizon. River flooding must be checked through the responsible state flood service.
@@ -137,7 +153,7 @@ Official warning counts affect the wording and urgency of verification only when
 - DWD percent nFK may legitimately be negative at the surface or exceed 200%; these values are retained rather than replaced with a neighbouring grid cell.
 - Apparent temperature is not UTCI.
 - NUTS-3 exposure is assumed rather than observed.
-- Crop and growth stage are user-declared scenarios; BÜK1000 is a generalised soil profile, not a field measurement. Irrigation history, drainage capacity, river routing, gauge state, and local response capacity remain absent.
+- Crop and growth stage are user-declared or coarse date-estimated scenarios; BUEK1000 is a generalised soil profile, not a field measurement. Non-DWD crops use reference profiles. Garden plant types and settings are planning heuristics, not species-level diagnoses. Irrigation history, drainage capacity, river routing, gauge state, and local response capacity remain absent.
 - Open-Meteo's free endpoint has rate limits and no service-level guarantee.
 
 ## Production roadmap
@@ -149,3 +165,4 @@ Official warning counts affect the wording and urgency of verification only when
 5. Connect upstream/downstream topology and official gauges without inferring flood probability from meteorological wetness alone.
 6. Compare the interpretable baseline with a HydroBASINS graph model using time- and region-held-out tests.
 7. Pilot the decision policy with public-health, agricultural, water, and municipal professionals before stronger recommendations.
+8. Add an optional constrained natural-language input layer only after prompt-abuse, cost, output-grounding, and accessibility tests pass.
