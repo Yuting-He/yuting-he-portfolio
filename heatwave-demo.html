@@ -18,194 +18,197 @@
     <link rel="stylesheet" href="./heatwave-demo.css">
   </head>
   <body>
-    <a class="skip-link" href="#application">Skip to risk explorer</a>
-    <header class="demo-header" aria-label="Primary navigation">
+    <a class="skip-link" href="#application" data-i18n="skipLink">Skip to risk explorer</a>
+    <header class="demo-header" aria-label="Primary navigation" data-i18n-aria-label="primaryNavigation">
       <a class="demo-brand" href="./index.html">Yuting He <span>GIS &amp; NatCat × Applied AI</span></a>
-      <nav aria-label="Demo navigation">
-        <a href="./index.html#projects">Portfolio</a>
-        <a href="#method">Method</a>
-        <a href="#data">Data</a>
-      </nav>
+      <div class="header-actions">
+        <nav aria-label="Demo navigation" data-i18n-aria-label="demoNavigation">
+          <a href="./index.html#projects" data-i18n="portfolio">Portfolio</a>
+          <a href="#method" data-i18n="method">Method</a>
+          <a href="#data" data-i18n="data">Data</a>
+        </nav>
+        <div class="language-switch" role="group" aria-label="Language / Sprache">
+          <button type="button" data-language="en" aria-pressed="true">EN</button>
+          <button type="button" data-language="de" aria-pressed="false">DE</button>
+        </div>
+      </div>
     </header>
 
     <main>
       <section class="demo-intro" aria-labelledby="demo-title">
         <div>
-          <p class="kicker">From hazard signal to role-specific action</p>
+          <p class="kicker" data-i18n="heroKicker">From hazard signal to role-specific action</p>
           <h1 id="demo-title">HeatLens Germany</h1>
-          <p>
-            Official warnings, measured DWD/RADOLAN checks, soil-water percentiles, and ICON ensemble-member dispersion are translated into
-            staged, low-regret checks for residents, farms, gardeners, and municipalities. HeatLens supports decisions; it does not reissue warnings.
-          </p>
+          <p data-i18n="heroBody">Official warnings, measured DWD/RADOLAN checks, soil-water percentiles, and ICON ensemble-member dispersion are translated into staged, low-regret checks for residents, farms, gardeners, and municipalities. HeatLens supports decisions; it does not reissue warnings.</p>
         </div>
-        <div class="scenario-context" aria-label="Model architecture">
-          <span class="context-label">Decision architecture</span>
-          <strong>Authority, screening, action</strong>
-          <span>DWD and state services remain authoritative; basin signals explain where and why to verify.</span>
+        <div class="scenario-context" aria-label="Model architecture" data-i18n-aria-label="architectureAria">
+          <span class="context-label" data-i18n="architectureLabel">Decision architecture</span>
+          <strong data-i18n="architectureTitle">Authority, screening, action</strong>
+          <span data-i18n="architectureBody">DWD and state services remain authoritative; basin signals explain where and why to verify.</span>
         </div>
       </section>
 
-      <section class="summary-strip" aria-label="Model overview">
+      <section class="summary-strip" aria-label="Model overview" data-i18n-aria-label="modelOverview">
         <dl>
           <div>
-            <dt>Coverage</dt>
-            <dd id="coverage-value">Loading boundaries</dd>
+            <dt data-i18n="coverage">Coverage</dt>
+            <dd id="coverage-value" data-i18n="loadingBoundaries">Loading boundaries</dd>
           </div>
           <div>
-            <dt>Selected date</dt>
-            <dd id="selected-date-value">Loading forecast</dd>
+            <dt data-i18n="selectedDate">Selected date</dt>
+            <dd id="selected-date-value" data-i18n="loadingForecast">Loading forecast</dd>
           </div>
           <div>
-            <dt>Prediction unit</dt>
+            <dt data-i18n="predictionUnit">Prediction unit</dt>
             <dd id="prediction-unit-value">HydroBASINS L8</dd>
           </div>
           <div>
-            <dt>Data status</dt>
-            <dd id="data-status-value">Loading snapshot</dd>
+            <dt data-i18n="dataStatus">Data status</dt>
+            <dd id="data-status-value" data-i18n="loadingSnapshot">Loading snapshot</dd>
           </div>
         </dl>
       </section>
 
       <section class="workbench" id="application" aria-labelledby="map-title">
         <div class="scenario-banner" role="note">
-          <span class="scenario-badge" id="live-status-badge">Loading model feed</span>
-          <p id="live-status-text">Loading the latest validated DWD ICON model snapshot.</p>
-          <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Check official weather warnings</a>
+          <span class="scenario-badge" id="live-status-badge" data-i18n="loadingModelFeed">Loading model feed</span>
+          <p id="live-status-text" data-i18n="loadingModelText">Loading the latest validated DWD ICON model snapshot.</p>
+          <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer" data-warning-link data-i18n="checkOfficialWarnings">Check official weather warnings</a>
         </div>
         <div class="workbench-toolbar">
           <fieldset class="control-group date-group">
-            <legend>Analysis date</legend>
+            <legend data-i18n="analysisDate">Analysis date</legend>
             <div class="date-controls">
-              <button class="icon-button" id="previous-day" type="button" aria-label="Previous day">&larr;</button>
-              <input id="forecast-date" type="date" aria-label="Forecast analysis date" aria-describedby="scenario-date-note">
-              <button class="icon-button" id="next-day" type="button" aria-label="Next day">&rarr;</button>
+              <button class="icon-button" id="previous-day" type="button" aria-label="Previous day" data-i18n-aria-label="previousDay">&larr;</button>
+              <input id="forecast-date" type="date" aria-label="Forecast analysis date" data-i18n-aria-label="forecastDate" aria-describedby="scenario-date-note">
+              <button class="icon-button" id="next-day" type="button" aria-label="Next day" data-i18n-aria-label="nextDay">&rarr;</button>
             </div>
-            <span class="control-note" id="scenario-date-note">Loading available dates</span>
+            <span class="control-note" id="scenario-date-note" data-i18n="loadingDates">Loading available dates</span>
           </fieldset>
           <fieldset class="control-group">
-            <legend>Spatial level</legend>
-            <div class="control-buttons" role="group" aria-label="Spatial level selection">
-              <button class="control-button is-active" type="button" data-level="state" aria-pressed="true">State</button>
-              <button class="control-button" type="button" data-level="district" aria-pressed="false">District / urban district</button>
-              <button class="control-button" type="button" data-level="basin" aria-pressed="false">Sub-basin</button>
-            </div>
-          </fieldset>
-          <fieldset class="control-group">
-            <legend>Decision lens</legend>
-            <div class="control-buttons" role="group" aria-label="Audience selection">
-              <button class="control-button is-active" type="button" data-audience="residents" aria-pressed="true">Residents</button>
-              <button class="control-button" type="button" data-audience="farmers" aria-pressed="false">Farmers</button>
-              <button class="control-button" type="button" data-audience="gardeners" aria-pressed="false">Gardeners</button>
-              <button class="control-button" type="button" data-audience="municipal" aria-pressed="false">Municipal</button>
+            <legend data-i18n="spatialLevel">Spatial level</legend>
+            <div class="control-buttons" role="group" aria-label="Spatial level selection" data-i18n-aria-label="spatialSelection">
+              <button class="control-button is-active" type="button" data-level="state" aria-pressed="true" data-i18n="levelState">State</button>
+              <button class="control-button" type="button" data-level="district" aria-pressed="false" data-i18n="levelDistrict">District / urban district</button>
+              <button class="control-button" type="button" data-level="basin" aria-pressed="false" data-i18n="levelBasin">Sub-basin</button>
             </div>
           </fieldset>
           <fieldset class="control-group">
-            <legend>Risk layer</legend>
-            <div class="control-buttons" role="group" aria-label="Risk layer selection">
-              <button class="control-button is-active" type="button" data-layer="impact" aria-pressed="true">Impact</button>
-              <button class="control-button" type="button" data-layer="heat" aria-pressed="false">Heat</button>
-              <button class="control-button" type="button" data-layer="dry" aria-pressed="false">Dry stress</button>
-              <button class="control-button" type="button" data-layer="wet" aria-pressed="false">Excess water</button>
+            <legend data-i18n="decisionLens">Decision lens</legend>
+            <div class="control-buttons" role="group" aria-label="Audience selection" data-i18n-aria-label="audienceSelection">
+              <button class="control-button is-active" type="button" data-audience="residents" aria-pressed="true" data-i18n="audienceResidents">Residents</button>
+              <button class="control-button" type="button" data-audience="farmers" aria-pressed="false" data-i18n="audienceFarmers">Farmers</button>
+              <button class="control-button" type="button" data-audience="gardeners" aria-pressed="false" data-i18n="audienceGardeners">Gardeners</button>
+              <button class="control-button" type="button" data-audience="municipal" aria-pressed="false" data-i18n="audienceMunicipal">Municipal</button>
             </div>
           </fieldset>
           <fieldset class="control-group">
-            <legend>Explanation</legend>
-            <div class="control-buttons" role="group" aria-label="Explanation detail">
-              <button class="control-button is-active" type="button" data-detail="plain" aria-pressed="true">Plain language</button>
-              <button class="control-button" type="button" data-detail="technical" aria-pressed="false">Technical detail</button>
+            <legend data-i18n="riskLayer">Risk layer</legend>
+            <div class="control-buttons" role="group" aria-label="Risk layer selection" data-i18n-aria-label="riskLayerSelection">
+              <button class="control-button is-active" type="button" data-layer="impact" aria-pressed="true" data-i18n="layerImpact">Impact</button>
+              <button class="control-button" type="button" data-layer="heat" aria-pressed="false" data-i18n="layerHeat">Heat</button>
+              <button class="control-button" type="button" data-layer="dry" aria-pressed="false" data-i18n="layerDry">Dry stress</button>
+              <button class="control-button" type="button" data-layer="wet" aria-pressed="false" data-i18n="layerWet">Excess water</button>
+            </div>
+          </fieldset>
+          <fieldset class="control-group">
+            <legend data-i18n="explanation">Explanation</legend>
+            <div class="control-buttons" role="group" aria-label="Explanation detail" data-i18n-aria-label="explanationDetail">
+              <button class="control-button is-active" type="button" data-detail="plain" aria-pressed="true" data-i18n="plainLanguage">Plain language</button>
+              <button class="control-button" type="button" data-detail="technical" aria-pressed="false" data-i18n="technicalDetail">Technical detail</button>
             </div>
           </fieldset>
           <fieldset class="control-group field-context" id="field-context" hidden>
-            <legend>Field context</legend>
+            <legend data-i18n="fieldContext">Field context</legend>
             <div class="field-context-controls">
               <label for="crop-profile">
-                Crop
+                <span data-i18n="crop">Crop</span>
                 <select id="crop-profile">
-                  <option value="dominant">Local dominant land use</option>
-                  <option value="grass">Grassland</option>
-                  <option value="maize">Maize</option>
-                  <option value="winterWheat">Winter wheat</option>
-                  <option value="winterBarley">Winter barley</option>
-                  <option value="potato">Potato</option>
-                  <option value="sugarBeet">Sugar beet</option>
-                  <option value="oilseedRape">Winter oilseed rape</option>
-                  <option value="orchard">Fruit orchard</option>
+                  <option value="dominant" data-i18n="cropDominant">Local dominant land use</option>
+                  <option value="grass" data-i18n="cropGrass">Grassland</option>
+                  <option value="maize" data-i18n="cropMaize">Maize</option>
+                  <option value="winterWheat" data-i18n="cropWinterWheat">Winter wheat</option>
+                  <option value="winterBarley" data-i18n="cropWinterBarley">Winter barley</option>
+                  <option value="potato" data-i18n="cropPotato">Potato</option>
+                  <option value="sugarBeet" data-i18n="cropSugarBeet">Sugar beet</option>
+                  <option value="oilseedRape" data-i18n="cropOilseedRape">Winter oilseed rape</option>
+                  <option value="orchard" data-i18n="cropOrchard">Fruit orchard</option>
                 </select>
               </label>
               <label for="crop-stage">
-                Growth stage
+                <span data-i18n="growthStage">Growth stage</span>
                 <select id="crop-stage">
-                  <option value="auto">Auto from selected date</option>
-                  <option value="dormant">Dormant / outside main season</option>
-                  <option value="establishment">Establishment</option>
-                  <option value="vegetative">Vegetative</option>
-                  <option value="flowering">Flowering / yield formation</option>
-                  <option value="maturity">Maturity</option>
+                  <option value="auto" data-i18n="stageAuto">Auto from selected date</option>
+                  <option value="dormant" data-i18n="stageDormant">Dormant / outside main season</option>
+                  <option value="establishment" data-i18n="stageEstablishment">Establishment</option>
+                  <option value="vegetative" data-i18n="stageVegetative">Vegetative</option>
+                  <option value="flowering" data-i18n="stageFlowering">Flowering / yield formation</option>
+                  <option value="maturity" data-i18n="stageMaturity">Maturity</option>
                 </select>
               </label>
               <label for="soil-profile">
-                Soil profile
+                <span data-i18n="soilProfile">Soil profile</span>
                 <select id="soil-profile">
-                  <option value="local">DWD / BUEK local profile</option>
-                  <option value="sand">Sandy override</option>
-                  <option value="loam">Loamy override</option>
-                  <option value="clay">Clayey override</option>
+                  <option value="local" data-i18n="soilLocal">DWD / BUEK local profile</option>
+                  <option value="sand" data-i18n="soilSand">Sandy override</option>
+                  <option value="loam" data-i18n="soilLoam">Loamy override</option>
+                  <option value="clay" data-i18n="soilClay">Clayey override</option>
                 </select>
               </label>
               <label for="farm-goal">
-                Advice focus
+                <span data-i18n="adviceFocus">Advice focus</span>
                 <select id="farm-goal">
-                  <option value="overview">Overall field check</option>
-                  <option value="irrigation">Irrigation planning</option>
-                  <option value="fieldAccess">Field access and waterlogging</option>
-                  <option value="workTiming">Outdoor work timing</option>
+                  <option value="overview" data-i18n="farmOverview">Overall field check</option>
+                  <option value="irrigation" data-i18n="farmIrrigation">Irrigation planning</option>
+                  <option value="fieldAccess" data-i18n="farmAccess">Field access and waterlogging</option>
+                  <option value="workTiming" data-i18n="farmTiming">Outdoor work timing</option>
                 </select>
               </label>
             </div>
-            <span class="control-note">Auto stage is a month-based German planning estimate and can be overridden. Maize, winter wheat, grass, and local dominant land use use direct DWD profiles; other crops use a clearly labelled reference profile.</span>
+            <span class="control-note" data-i18n="fieldNote">Auto stage is a month-based German planning estimate and can be overridden. Maize, winter wheat, grass, and local dominant land use use direct DWD profiles; other crops use a clearly labelled reference profile.</span>
           </fieldset>
           <fieldset class="control-group field-context" id="garden-context" hidden>
-            <legend>Garden context</legend>
+            <legend data-i18n="gardenContext">Garden context</legend>
             <div class="field-context-controls">
               <label for="plant-profile">
-                Plant type
+                <span data-i18n="plantType">Plant type</span>
                 <select id="plant-profile">
-                  <option value="seasonalFlowers">Seasonal flowers and bedding plants</option>
-                  <option value="herbaceousPerennials">Herbaceous perennials</option>
-                  <option value="rosesShrubs">Roses and ornamental shrubs</option>
-                  <option value="newlyPlantedWoody">Newly planted trees and shrubs</option>
-                  <option value="establishedWoody">Established trees and shrubs</option>
-                  <option value="droughtTolerant">Drought-tolerant Mediterranean plants</option>
+                  <option value="seasonalFlowers" data-i18n="plantSeasonalFlowers">Seasonal flowers and bedding plants</option>
+                  <option value="herbaceousPerennials" data-i18n="plantPerennials">Herbaceous perennials</option>
+                  <option value="rosesShrubs" data-i18n="plantRosesShrubs">Roses and ornamental shrubs</option>
+                  <option value="newlyPlantedWoody" data-i18n="plantNewWoody">Newly planted trees and shrubs</option>
+                  <option value="establishedWoody" data-i18n="plantEstablishedWoody">Established trees and shrubs</option>
+                  <option value="droughtTolerant" data-i18n="plantDroughtTolerant">Drought-tolerant Mediterranean plants</option>
                 </select>
               </label>
               <label for="garden-setting">
-                Growing place
+                <span data-i18n="growingPlace">Growing place</span>
                 <select id="garden-setting">
-                  <option value="container">Container or balcony</option>
-                  <option value="openGround">Open ground</option>
-                  <option value="rainShadow">Wall / eave rain shadow</option>
+                  <option value="container" data-i18n="settingContainer">Container or balcony</option>
+                  <option value="openGround" data-i18n="settingOpenGround">Open ground</option>
+                  <option value="rainShadow" data-i18n="settingRainShadow">Wall / eave rain shadow</option>
                 </select>
               </label>
               <label for="garden-soil">
-                Drainage
+                <span data-i18n="drainage">Drainage</span>
                 <select id="garden-soil">
-                  <option value="unknown">Unknown / mixed</option>
-                  <option value="freeDraining">Free-draining</option>
-                  <option value="moistureRetentive">Moisture-retentive</option>
-                  <option value="poorDrainage">Poor drainage</option>
+                  <option value="unknown" data-i18n="drainageUnknown">Unknown / mixed</option>
+                  <option value="freeDraining" data-i18n="drainageFree">Free-draining</option>
+                  <option value="moistureRetentive" data-i18n="drainageRetentive">Moisture-retentive</option>
+                  <option value="poorDrainage" data-i18n="drainagePoor">Poor drainage</option>
                 </select>
               </label>
               <label for="garden-goal">
-                Advice focus
+                <span data-i18n="adviceFocus">Advice focus</span>
                 <select id="garden-goal">
-                  <option value="overview">Overall plant check</option>
-                  <option value="watering">Watering decision</option>
-                  <option value="heatProtection">Heat protection</option>
-                  <option value="waterlogging">Waterlogging and drainage</option>
+                  <option value="overview" data-i18n="gardenOverview">Overall plant check</option>
+                  <option value="watering" data-i18n="gardenWatering">Watering decision</option>
+                  <option value="heatProtection" data-i18n="gardenHeat">Heat protection</option>
+                  <option value="waterlogging" data-i18n="gardenWet">Waterlogging and drainage</option>
                 </select>
               </label>
             </div>
-            <span class="control-note">No sensor is required: advice combines regional conditions with simple checks of the actual pot, root area, plant condition, and drainage.</span>
+            <span class="control-note" data-i18n="gardenNote">No sensor is required: advice combines regional conditions with simple checks of the actual pot, root area, plant condition, and drainage.</span>
           </fieldset>
         </div>
 
@@ -213,91 +216,91 @@
           <section class="map-stage" aria-labelledby="map-title">
             <div class="map-stage-heading">
               <div>
-                <p class="section-label" id="scope-label">National overview</p>
-                <h2 id="map-title">Germany - states</h2>
+                <p class="section-label" id="scope-label" data-i18n="nationalOverview">National overview</p>
+                <h2 id="map-title" data-i18n="germanyStates">Germany - states</h2>
               </div>
               <div class="map-heading-actions">
-                <button class="scope-back" id="scope-back" type="button" hidden>&larr; Germany</button>
-                <button class="utility-button" id="share-view" type="button">Copy view link</button>
-                <button class="utility-button" id="export-view" type="button">Export JSON</button>
+                <button class="scope-back" id="scope-back" type="button" hidden data-i18n="backGermany">&larr; Germany</button>
+                <button class="utility-button" id="share-view" type="button" data-i18n="copyView">Copy view link</button>
+                <button class="utility-button" id="export-view" type="button" data-i18n="exportJson">Export JSON</button>
                 <label class="region-select-label" for="region-select">
-                  Region
+                  <span data-i18n="region">Region</span>
                   <select id="region-select"></select>
                 </label>
               </div>
             </div>
-            <div id="heat-map" role="region" aria-label="Interactive Germany heat, dry, and excess-water screening map" aria-describedby="map-status"></div>
-            <p id="map-status" class="map-status" role="status">Loading boundaries and forecast data.</p>
-            <button class="retry-button" id="retry-load" type="button" hidden>Retry loading map</button>
+            <div id="heat-map" role="region" aria-label="Interactive Germany heat, dry, and excess-water screening map" data-i18n-aria-label="mapAria" aria-describedby="map-status"></div>
+            <p id="map-status" class="map-status" role="status" data-i18n="mapLoading">Loading boundaries and forecast data.</p>
+            <button class="retry-button" id="retry-load" type="button" hidden data-i18n="retryMap">Retry loading map</button>
             <p id="view-feedback" class="view-feedback" role="status" aria-live="polite"></p>
-            <div class="map-legend" id="map-legend" aria-label="Risk level legend">
-              <span><i class="swatch watch"></i><span data-legend-label="low">Low</span></span>
-              <span><i class="swatch elevated"></i><span data-legend-label="moderate">Moderate</span></span>
-              <span><i class="swatch severe"></i><span data-legend-label="high">High</span></span>
-              <span><i class="swatch extreme"></i><span data-legend-label="very-high">Very high</span></span>
-              <span><i class="swatch unavailable"></i><span data-legend-label="unavailable">Insufficient coverage</span></span>
+            <div class="map-legend" id="map-legend" aria-label="Risk level legend" data-i18n-aria-label="riskLegend">
+              <span><i class="swatch watch"></i><span data-legend-label="low" data-i18n="severityLow">Low</span></span>
+              <span><i class="swatch elevated"></i><span data-legend-label="moderate" data-i18n="severityModerate">Moderate</span></span>
+              <span><i class="swatch severe"></i><span data-legend-label="high" data-i18n="severityHigh">High</span></span>
+              <span><i class="swatch extreme"></i><span data-legend-label="very-high" data-i18n="severityVeryHigh">Very high</span></span>
+              <span><i class="swatch unavailable"></i><span data-legend-label="unavailable" data-i18n="insufficientCoverage">Insufficient coverage</span></span>
             </div>
           </section>
 
           <aside class="detail-panel" aria-labelledby="region-title">
-            <p class="section-label" id="selected-kind">Selected state</p>
+            <p class="section-label" id="selected-kind" data-i18n="selectedStateLabel">Selected state</p>
             <div class="region-heading">
               <h2 id="region-title">Germany</h2>
-              <span id="risk-level" class="risk-level">Loading</span>
+              <span id="risk-level" class="risk-level" data-i18n="loading">Loading</span>
             </div>
             <p id="region-summary" class="region-summary"></p>
             <p id="personalisation-summary" class="personalisation-summary" role="status" aria-live="polite" hidden></p>
             <div class="explanation-heading">
-              <p class="section-label" id="signal-heading">What this means</p>
-              <span id="detail-mode-note">Plain language</span>
+              <p class="section-label" id="signal-heading" data-i18n="whatThisMeans">What this means</p>
+              <span id="detail-mode-note" data-i18n="plainLanguage">Plain language</span>
             </div>
             <div id="signal-list" class="signal-list" aria-labelledby="signal-heading"></div>
             <section class="trend-block" aria-labelledby="trend-title">
               <div class="trend-heading">
-                <h3 id="trend-title">9-day risk profile</h3>
-                <span id="trend-layer-label">Impact risk</span>
+                <h3 id="trend-title" data-i18n="trendInitialTitle">9-day risk profile</h3>
+                <span id="trend-layer-label" data-i18n="impactRisk">Impact risk</span>
               </div>
               <svg id="risk-trend" viewBox="0 0 360 116" role="img" aria-labelledby="trend-svg-title trend-svg-desc">
-                <title id="trend-svg-title">Selected region screening risk across available dates</title>
-                <desc id="trend-svg-desc">Trend data will appear after a region is loaded.</desc>
+                <title id="trend-svg-title" data-i18n="trendSvgTitle">Selected region screening risk across available dates</title>
+                <desc id="trend-svg-desc" data-i18n="trendSvgDescription">Trend data will appear after a region is loaded.</desc>
               </svg>
             </section>
             <section class="official-warning-block" aria-labelledby="official-warning-heading">
-              <p class="section-label" id="official-warning-heading">Authoritative context</p>
+              <p class="section-label" id="official-warning-heading" data-i18n="authoritativeContext">Authoritative context</p>
               <div class="official-warning-row">
-                <span>Heat</span>
+                <span data-i18n="heat">Heat</span>
                 <div>
-                  <strong id="official-heat-title">Loading DWD warning feed</strong>
+                  <strong id="official-heat-title" data-i18n="loadingWarningFeed">Loading DWD warning feed</strong>
                   <p id="official-heat-detail"></p>
                 </div>
               </div>
               <div class="official-warning-row">
-                <span>Rain</span>
+                <span data-i18n="rain">Rain</span>
                 <div>
-                  <strong id="official-rain-title">Loading DWD warning feed</strong>
+                  <strong id="official-rain-title" data-i18n="loadingWarningFeed">Loading DWD warning feed</strong>
                   <p id="official-rain-detail"></p>
                 </div>
               </div>
               <div class="authority-links">
-                <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer">Official weather warnings</a>
-                <a href="https://www.hochwasserzentralen.de/" target="_blank" rel="noopener noreferrer">State flood services</a>
-                <a href="https://www.ufz.de/index.php?de=37937&m=0" target="_blank" rel="noopener noreferrer">Soil-water monitor</a>
+                <a href="https://www.dwd.de/EN/weather/warnings/warnings_node.html" target="_blank" rel="noopener noreferrer" data-warning-link data-i18n="officialWarnings">Official weather warnings</a>
+                <a href="https://www.hochwasserzentralen.de/" target="_blank" rel="noopener noreferrer" data-i18n="floodServices">State flood services</a>
+                <a href="https://www.ufz.de/index.php?de=37937&m=0" target="_blank" rel="noopener noreferrer" data-i18n="soilMonitor">Soil-water monitor</a>
               </div>
             </section>
             <div class="action-block">
               <div class="action-heading">
-                <p class="section-label" id="action-heading-label">Suggested next actions</p>
+                <p class="section-label" id="action-heading-label" data-i18n="suggestedActions">Suggested next actions</p>
                 <span id="confidence-label"></span>
               </div>
               <ol id="action-list"></ol>
             </div>
             <p class="decision-note" id="decision-note"></p>
             <p class="plain-source-summary" id="plain-source-summary"></p>
-            <dl class="provenance-list" id="provenance-list" aria-label="Data provenance" hidden>
-              <div><dt>Index model</dt><dd id="model-version">v0.8.0-guided-personalisation</dd></div>
-              <div><dt>Forcing</dt><dd id="forcing-source">DWD ICON + ICON-EPS</dd></div>
-              <div><dt>Snapshot generated</dt><dd id="source-updated">Loading</dd></div>
-              <div><dt>Operational status</dt><dd id="operational-status">Screening only</dd></div>
+            <dl class="provenance-list" id="provenance-list" aria-label="Data provenance" data-i18n-aria-label="provenanceAria" hidden>
+              <div><dt data-i18n="indexModel">Index model</dt><dd id="model-version">v0.8.0-guided-personalisation</dd></div>
+              <div><dt data-i18n="forcing">Forcing</dt><dd id="forcing-source">DWD ICON + ICON-EPS</dd></div>
+              <div><dt data-i18n="snapshotGenerated">Snapshot generated</dt><dd id="source-updated" data-i18n="loading">Loading</dd></div>
+              <div><dt data-i18n="operationalStatus">Operational status</dt><dd id="operational-status" data-i18n="screeningOnly">Screening only</dd></div>
             </dl>
           </aside>
         </div>
@@ -309,23 +312,23 @@
 
       <section id="method" class="content-band" aria-labelledby="method-title">
         <div class="content-inner">
-          <p class="kicker">Decision translation model</p>
-          <h2 id="method-title">Official signals stay official; local context makes them actionable.</h2>
+          <p class="kicker" data-i18n="methodKicker">Decision translation model</p>
+          <h2 id="method-title" data-i18n="methodTitle">Official signals stay official; local context makes them actionable.</h2>
           <div class="method-grid">
             <article>
               <span>01</span>
-              <h3>Anchor forecasts in observed water state</h3>
-              <p>UFZ soil-moisture percentiles, DWD crop-specific nFK, RADOLAN 24-hour rain, and DWD station temperatures provide a dated baseline for 614 sub-basins.</p>
+              <h3 data-i18n="method1Title">Anchor forecasts in observed water state</h3>
+              <p data-i18n="method1Body">UFZ soil-moisture percentiles, DWD crop-specific nFK, RADOLAN 24-hour rain, and DWD station temperatures provide a dated baseline for 614 sub-basins.</p>
             </article>
             <article>
               <span>02</span>
-              <h3>Carry uncertainty through local views</h3>
-              <p>ICON-D2-EPS covers the near term; ICON-EU/Global EPS extends the horizon. Daily means and hourly member standard deviations are area-weighted into 400 NUTS-3 regions and 16 states.</p>
+              <h3 data-i18n="method2Title">Carry uncertainty through local views</h3>
+              <p data-i18n="method2Body">ICON-D2-EPS covers the near term; ICON-EU/Global EPS extends the horizon. Daily means and hourly member standard deviations are area-weighted into 400 NUTS-3 regions and 16 states.</p>
             </article>
             <article>
               <span>03</span>
-              <h3>Translate conditions into plant-specific checks</h3>
-              <p>Farmers can combine crop, date-estimated or manual growth stage, soil, and decision focus. Gardeners can choose plant type, growing place, drainage, and concern. Both paths change priorities without inventing an irrigation amount or harvest decision.</p>
+              <h3 data-i18n="method3Title">Translate conditions into plant-specific checks</h3>
+              <p data-i18n="method3Body">Farmers can combine crop, date-estimated or manual growth stage, soil, and decision focus. Gardeners can choose plant type, growing place, drainage, and concern. Both paths change priorities without inventing an irrigation amount or harvest decision.</p>
             </article>
           </div>
         </div>
@@ -333,78 +336,72 @@
 
       <section id="data" class="content-section" aria-labelledby="data-title">
         <div class="content-inner">
-          <p class="kicker">Open-data architecture</p>
-          <h2 id="data-title">A production-shaped separation of geometry, forcing, model, and action.</h2>
+          <p class="kicker" data-i18n="dataKicker">Open-data architecture</p>
+          <h2 id="data-title" data-i18n="dataTitle">A production-shaped separation of geometry, forcing, model, and action.</h2>
           <div class="data-table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Source</th>
-                  <th>Operational role</th>
-                    <th>Spatial / temporal use</th>
-                    <th>Current status</th>
+                  <th data-i18n="tableSource">Source</th>
+                  <th data-i18n="tableRole">Operational role</th>
+                    <th data-i18n="tableUse">Spatial / temporal use</th>
+                    <th data-i18n="tableStatus">Current status</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td><a href="https://www.hydrosheds.org/products/hydrobasins">HydroBASINS Level 8</a></td>
-                  <td>Non-overlapping heat and soil-water prediction units with hydrological topology</td>
-                  <td>614 Germany-clipped sub-basins</td>
-                  <td>Bundled geometry; live source fields sampled at basin centroids</td>
+                  <td data-i18n="dataBasinRole">Non-overlapping heat and soil-water prediction units with hydrological topology</td>
+                  <td data-i18n="dataBasinUse">614 Germany-clipped sub-basins</td>
+                  <td data-i18n="dataBasinStatus">Bundled geometry; live source fields sampled at basin centroids</td>
                 </tr>
                 <tr>
                   <td><a href="https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/territorial-units-statistics">Eurostat GISCO NUTS 2024</a></td>
-                  <td>Administrative aggregation and drill-down</td>
-                  <td>16 states and 400 districts / urban districts</td>
-                  <td>Bundled 1:1M geometry and exact overlap weights</td>
+                  <td data-i18n="dataNutsRole">Administrative aggregation and drill-down</td>
+                  <td data-i18n="dataNutsUse">16 states and 400 districts / urban districts</td>
+                  <td data-i18n="dataNutsStatus">Bundled 1:1M geometry and exact overlap weights</td>
                 </tr>
                 <tr>
                   <td><a href="https://open-meteo.com/en/docs/dwd-api">DWD ICON</a> / <a href="https://open-meteo.com/en/docs/ensemble-mean-api">ICON ensemble mean</a></td>
-                  <td>Deterministic thermal and water forcing plus daily ensemble means and hourly member standard deviations</td>
-                  <td>ICON-D2-EPS near term; ICON-EU/Global EPS through day seven</td>
-                  <td>Integrated; scheduled refresh every six hours</td>
+                  <td data-i18n="dataIconRole">Deterministic thermal and water forcing plus daily ensemble means and hourly member standard deviations</td>
+                  <td data-i18n="dataIconUse">ICON-D2-EPS near term; ICON-EU/Global EPS through day seven</td>
+                  <td data-i18n="dataIconStatus">Integrated; scheduled refresh every six hours</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a> / <a href="https://www.dwd.de/bodenfeuchteviewer">DWD soil moisture</a></td>
-                  <td>Topsoil and total-soil SMI, plant-available water, and AMBAV crop-specific percent nFK using local BÜK1000 soils</td>
-                  <td>UFZ 4 km percentile grid; DWD 1 km crop grid averaged to 30, 60, or 90 cm</td>
-                  <td>Machine-ingested with source date and nearest-cell distance</td>
+                  <td><a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a> / <a href="https://www.dwd.de/bodenfeuchteviewer" data-i18n="dwdSoilLink">DWD soil moisture</a></td>
+                  <td data-i18n="dataSoilRole">Topsoil and total-soil SMI, plant-available water, and AMBAV crop-specific percent nFK using local BÜK1000 soils</td>
+                  <td data-i18n="dataSoilUse">UFZ 4 km percentile grid; DWD 1 km crop grid averaged to 30, 60, or 90 cm</td>
+                  <td data-i18n="dataSoilStatus">Machine-ingested with source date and nearest-cell distance</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.dwd.de/DE/leistungen/radolan/radolan.html">DWD RADOLAN SF</a> / <a href="https://opendata.dwd.de/weather/weather_reports/poi/">DWD POI observations</a></td>
-                  <td>Gauge-adjusted rolling 24-hour radar precipitation and matched-station temperature bias / MAE</td>
-                  <td>1 km rain grid and a distributed network of up to 160 German stations</td>
-                  <td>Machine-ingested; observations remain visibly separate from forecasts</td>
+                  <td><a href="https://www.dwd.de/DE/leistungen/radolan/radolan.html">DWD RADOLAN SF</a> / <a href="https://opendata.dwd.de/weather/weather_reports/poi/" data-i18n="dwdObservationsLink">DWD POI observations</a></td>
+                  <td data-i18n="dataObservedRole">Gauge-adjusted rolling 24-hour radar precipitation and matched-station temperature bias / MAE</td>
+                  <td data-i18n="dataObservedUse">1 km rain grid and a distributed network of up to 160 German stations</td>
+                  <td data-i18n="dataObservedStatus">Machine-ingested; observations remain visibly separate from forecasts</td>
                 </tr>
                 <tr>
-                  <td><a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html">DWD warnings</a> / <a href="https://www.hochwasserzentralen.de/">state flood portals</a></td>
-                  <td>Authoritative heat, heavy-rain, gauge, and river context</td>
-                  <td>Current official services</td>
-                  <td>Displayed separately and never replaced by a HeatLens score</td>
+                  <td><a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html" data-i18n="dwdWarningsLink">DWD warnings</a> / <a href="https://www.hochwasserzentralen.de/" data-i18n="floodPortalsLink">state flood portals</a></td>
+                  <td data-i18n="dataWarningsRole">Authoritative heat, heavy-rain, gauge, and river context</td>
+                  <td data-i18n="dataWarningsUse">Current official services</td>
+                  <td data-i18n="dataWarningsStatus">Displayed separately and never replaced by a HeatLens score</td>
                 </tr>
               </tbody>
             </table>
           </div>
           <p class="source-note">
-            Germany already has mature DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and
-            <a href="https://www.dwd.de/DE/leistungen/agrowetter_beregnung/agrobereg.html">specialised agricultural advice</a>.
-            HeatLens's role is to connect these services to transparent, role-specific decision checks.
-            Its 0-100 values are uncalibrated screening indices, not probabilities, official warnings, flood forecasts, or agronomic instructions.
-            Observations validate and initialise context but do not turn the index into a calibrated forecast.
-            HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO).
-            Weather data: Open-Meteo (CC BY 4.0) using DWD ICON and ICON-EPS. Soil and observation data: UFZ and DWD.
-            Background map and place labels: &copy; OpenStreetMap contributors.
+            <span data-i18n="sourceNoteBeforeLink">Germany already has mature DWD heat and rain warnings, DWD and UFZ soil-water services, state flood portals, and</span>
+            <a href="https://www.dwd.de/DE/leistungen/agrowetter_beregnung/agrobereg.html" data-i18n="sourceAdviceLink">specialised agricultural advice</a><span data-i18n="sourceNoteAfterLink">. HeatLens's role is to connect these services to transparent, role-specific decision checks. Its 0-100 values are uncalibrated screening indices, not probabilities, official warnings, flood forecasts, or agronomic instructions. Observations validate and initialise context but do not turn the index into a calibrated forecast. HydroBASINS citation: Lehner &amp; Grill (2013). NUTS 2024 1:1M geometry source: European Commission, Eurostat (GISCO). Weather data: Open-Meteo (CC BY 4.0) using DWD ICON and ICON-EPS. Soil and observation data: UFZ and DWD. Background map and place labels: © OpenStreetMap contributors.</span>
           </p>
         </div>
       </section>
     </main>
 
     <footer>
-      <p>HeatLens Germany - GIS &amp; NatCat × Applied AI Development by Yuting He.</p>
-      <a href="./index.html">Back to portfolio</a>
+      <p data-i18n="footerText">HeatLens Germany - GIS &amp; NatCat × Applied AI Development by Yuting He.</p>
+      <a href="./index.html" data-i18n="backPortfolio">Back to portfolio</a>
     </footer>
 
-    <noscript><p class="noscript-note">HeatLens requires JavaScript to validate, calculate, and render the forecast map.</p></noscript>
+    <noscript><p class="noscript-note" data-i18n="noscript">HeatLens requires JavaScript to validate, calculate, and render the forecast map.</p></noscript>
     <script src="./vendor/d3.min.js"></script>
     <script src="./vendor/leaflet.js"></script>
     <script type="module" src="./heatwave-demo.js"></script>

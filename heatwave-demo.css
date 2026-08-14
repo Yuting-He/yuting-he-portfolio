@@ -118,6 +118,46 @@ nav a {
   text-decoration: none;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.language-switch {
+  display: inline-flex;
+  min-width: 86px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.language-switch button {
+  width: 43px;
+  min-height: 34px;
+  padding: 5px 8px;
+  color: var(--muted);
+  background: var(--white);
+  border: 0;
+  border-left: 1px solid var(--line);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.language-switch button:first-child {
+  border-left: 0;
+}
+
+.language-switch button:hover {
+  color: var(--teal-dark);
+}
+
+.language-switch button.is-active {
+  color: var(--white);
+  background: var(--teal-dark);
+}
+
 .demo-intro,
 .summary-strip dl,
 .workbench,
@@ -1038,6 +1078,12 @@ footer p {
     gap: 6px;
   }
 
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
   nav {
     gap: 18px;
   }
@@ -1091,6 +1137,19 @@ footer p {
 }
 
 @media (max-width: 560px) {
+  .header-actions {
+    align-items: flex-start;
+  }
+
+  nav {
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+
+  .language-switch button {
+    min-height: 40px;
+  }
+
   .control-button,
   .icon-button,
   .scope-back,

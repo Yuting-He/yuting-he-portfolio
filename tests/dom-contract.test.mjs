@@ -45,6 +45,9 @@ test("interactive page uses bundled map libraries, OSM tiles, and exposes live-d
   assert.match(html, /id="plant-profile"/);
   assert.match(html, /id="farm-goal"/);
   assert.match(html, /id="personalisation-summary"/);
+  assert.match(html, /data-language="en"/);
+  assert.match(html, /data-language="de"/);
+  assert.match(script, /applyDocumentLanguage/);
   assert.match(script, /Newer dates require a data refresh/);
   assert.match(script, /is-focused-action/);
   assert.match(html, /ICON ensemble mean/i);
@@ -63,6 +66,8 @@ test("GitHub Pages refreshes on schedule and deployment is gated by build tests"
   assert.match(workflow, /steps\.refresh\.outcome/);
   assert.match(workflow, /path: _site/);
   assert.match(workflow, /heatwave-language\.js/);
+  assert.match(workflow, /heatwave-language-de\.js/);
+  assert.match(workflow, /heatwave-i18n\.js/);
   assert.doesNotMatch(workflow, /path:\s*\.\s*$/m);
 });
 

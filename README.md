@@ -24,6 +24,7 @@ Personal portfolio for environmental engineering, statistics, geospatial NatCat 
 - staged low-regret actions and explicit human-verification gates for residents, farmers, gardeners, and municipal teams
 - direct escalation links to DWD warnings, the German state flood portals, and the UFZ soil-water monitor
 - shareable URL state and JSON snapshot export
+- complete English/German interface switching, including generated explanations, actions, dates, status messages, and shareable `lang` state
 - per-source freshness, source completeness, spatial coverage, station-distance, and ensemble-dispersion evidence grades
 
 ## Decision boundary
@@ -36,7 +37,7 @@ The current impact layer still uses explicit urban/rural exposure and crop-sensi
 
 ## Local development
 
-HeatLens opens in a plain-language explanation mode that translates the selected heat and soil-water signals into an overall situation, heat meaning, ground or crop meaning, rain and standing-water meaning, confidence, and role-specific next actions. Technical detail remains available in the same interface with exact parameters, source timestamps, and model provenance. The selected explanation mode is included in shareable URLs and JSON exports.
+HeatLens opens in a plain-language explanation mode that translates the selected heat and soil-water signals into an overall situation, heat meaning, ground or crop meaning, rain and standing-water meaning, confidence, and role-specific next actions. Technical detail remains available in the same interface with exact parameters, source timestamps, and model provenance. The interface and generated guidance can be switched between English and German; language and explanation mode are included in shareable URLs and JSON exports. Browsers configured for German start in German unless an explicit `?lang=en` or `?lang=de` URL state is present.
 
 Personalised farm and garden advice is deterministic and runs in the browser, so the public demo has no per-query AI charge and no exposed API key. Crop or plant selections change transparent thresholds, context, and action ordering. A future language-model layer may parse questions or rewrite the same approved actions, but it must not create irrigation volumes, harvest decisions, or unsupported diagnoses.
 
@@ -82,6 +83,7 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 - `heatwave-demo.html`, `heatwave-demo.css`, `heatwave-demo.js` - live application interface
 - `heatwave-model.js` - transparent heat, dry, excess-water, impact, and action-policy model
 - `heatwave-language.js` - deterministic plain-language translation and decision-safety wording
+- `heatwave-language-de.js`, `heatwave-i18n.js` - German decision wording and shared EN/DE interface localization
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
 - `assets/live/forecast.json` - last validated operational snapshot
 - `scripts/fetch-live-data.mjs` - coordinated deterministic and ensemble forecast ingestion

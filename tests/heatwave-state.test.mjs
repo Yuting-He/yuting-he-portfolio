@@ -12,6 +12,7 @@ import {
 
 test("shared live view state round-trips through URL parameters", () => {
   const source = {
+    language: "de",
     date: "2026-07-22",
     level: "basin",
     audience: "farmers",
@@ -40,6 +41,13 @@ test("legacy drought and water links migrate to the dry-stress layer", () => {
 test("invalid shared state falls back to a safe default view", () => {
   const parsed = parseViewState("?date=2026-02-30&level=postcode&audience=admin&layer=wind&detail=expert&state=BAD&district=DE2");
   assert.deepEqual(parsed, DEFAULT_VIEW);
+});
+
+test("language state accepts English or German and supports a browser default", () => {
+  assert.equal(parseViewState("?lang=de").language, "de");
+  assert.equal(parseViewState("?lang=en", "de").language, "en");
+  assert.equal(parseViewState("", "de").language, "de");
+  assert.equal(parseViewState("?lang=fr", "fr").language, "en");
 });
 
 test("a requested date resolves to the current or nearest available model date", () => {

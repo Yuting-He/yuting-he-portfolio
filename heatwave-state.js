@@ -9,8 +9,10 @@ import {
 
 const LEVELS = new Set(["state", "district", "basin"]);
 const DETAIL_MODES = new Set(["plain", "technical"]);
+const LANGUAGES = new Set(["en", "de"]);
 
 export const DEFAULT_VIEW = Object.freeze({
+  language: "en",
   date: null,
   level: "state",
   audience: "residents",
@@ -34,8 +36,9 @@ function optionalId(params, key, pattern) {
   return value && pattern.test(value) ? value : null;
 }
 
-export function parseViewState(search = "") {
+export function parseViewState(search = "", defaultLanguage = DEFAULT_VIEW.language) {
   const params = new URLSearchParams(search);
+  const language = params.get("lang");
   const legacyLayer = params.get("layer");
   const requestedLayer = legacyLayer === "drought" || legacyLayer === "water" ? "dry" : legacyLayer;
   const date = params.get("date");
@@ -51,6 +54,9 @@ export function parseViewState(search = "") {
   const gardenSoil = params.get("gardenSoil");
   const gardenGoal = params.get("gardenGoal");
   return {
+    language: LANGUAGES.has(language)
+      ? language
+      : LANGUAGES.has(defaultLanguage) ? defaultLanguage : DEFAULT_VIEW.language,
     date: isIsoDate(date) ? date : DEFAULT_VIEW.date,
     level: LEVELS.has(level) ? level : DEFAULT_VIEW.level,
     audience: Object.hasOwn(AUDIENCES, audience) ? audience : DEFAULT_VIEW.audience,
@@ -140,6 +146,7 @@ export function isRetrospectiveDate(selectedDate, currentModelDate) {
 
 export function serializeViewState(view) {
   const params = new URLSearchParams({
+    lang: LANGUAGES.has(view.language) ? view.language : DEFAULT_VIEW.language,
     level: view.level,
     audience: view.audience,
     layer: view.layer,
