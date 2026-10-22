@@ -27,7 +27,7 @@ The processed files, exact-intersection method, source URLs, and checksums are r
 - Gauge-adjusted rolling 24-hour precipitation: Deutscher Wetterdienst RADOLAN SF HDF5 product: <https://opendata.dwd.de/weather/radar/radolan/sf/> and <https://www.dwd.de/DE/leistungen/radolan/radolan.html>.
 - Air-temperature observations and previous-day maxima: Deutscher Wetterdienst POI observations and synoptic station list: <https://opendata.dwd.de/weather/weather_reports/poi/>.
 - Crop-specific soil moisture as percent of plant-available field capacity: Deutscher Wetterdienst CDC WCS, AMBAV 2.0 using BGR BÜK1000 soil profiles: <https://cdc.dwd.de/geoserver/CDC/wcs> and <https://www.dwd.de/bodenfeuchteviewer>.
-- Soil Moisture Index and plant-available water: UFZ Dürremonitor Deutschland. Attribution: “UFZ-Dürremonitor/ Helmholtz-Zentrum für Umweltforschung”: <https://www.ufz.de/index.php?de=37937&m=0>.
+- Soil Moisture Index and plant-available water: UFZ Dürremonitor Deutschland v2, geographic grid at 0.015625-degree spacing. SMI uses a 14-day moving mean and the 1974-2023 reference period; daily 0-25 cm plant-available water is a separate percentage field that can exceed 100%. Attribution: “UFZ-Dürremonitor/ Helmholtz-Zentrum für Umweltforschung”. Source, downloads and original usage terms: <https://www.ufz.de/index.php?de=37937&m=0>. Source-file version and component dates are recorded in each refreshed snapshot.
 
 Weather, soil-water, observation, and warning records in `assets/live/forecast.json` retain their source terms and are not relicensed under the project's MIT License. DWD-derived processing changes include centroid sampling, nearest-valid-cell fallback with a recorded distance, depth averaging, and administrative area weighting.
 

@@ -6,9 +6,9 @@ import proj4 from "proj4";
 
 export const GRID_SOURCE_URLS = Object.freeze({
   radolan: "https://opendata.dwd.de/weather/radar/radolan/sf/raa01-sf_10000-latest-dwd---bin.hdf5",
-  ufzTopsoil: "https://files.ufz.de/~drought/SM_L02_daily_n14.nc",
-  ufzTotal: "https://files.ufz.de/~drought/SM_Lall_daily_n14.nc",
-  ufzPlantAvailable: "https://files.ufz.de/~drought/nFK_0_25_daily_n14.nc",
+  ufzTopsoil: "https://files.ufz.de/~drought/SM_0_25cm_runmean14_v2_daily_n14.nc",
+  ufzTotal: "https://files.ufz.de/~drought/SM_Lall_runmean14_v2_daily_n14.nc",
+  ufzPlantAvailable: "https://files.ufz.de/~drought/PAW_0_25cm_v2_daily_n14.nc",
   dwdSoilDescribe: "https://cdc.dwd.de/geoserver/CDC/wcs?service=WCS&version=2.0.1&request=DescribeCoverage&coverageId=CDC__GRD_DEU_P1D_BF-KOM",
   dwdSoilWcs: "https://cdc.dwd.de/geoserver/CDC/wcs"
 });
@@ -61,10 +61,14 @@ export function nearestValidGridValue({
   yIndex,
   isValid,
   maxRadius = 0,
-  reverseY = false
+  reverseY = false,
+  includeCoordinates = false,
+  distanceForCell = null,
+  maximumDistance = Infinity
 }) {
+  let best = null;
+  let bestDistance = Infinity;
   for (let radius = 0; radius <= maxRadius; radius += 1) {
-    let best = null;
     for (let dy = -radius; dy <= radius; dy += 1) {
       for (let dx = -radius; dx <= radius; dx += 1) {
         if (radius && Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
@@ -75,12 +79,16 @@ export function nearestValidGridValue({
         const value = data[row * width + x];
         if (!isValid(value)) continue;
         const distanceCells = Math.hypot(dx, dy);
-        if (!best || distanceCells < best.distanceCells) best = { value, distanceCells };
+        const distance = distanceForCell ? distanceForCell(x, y) : distanceCells;
+        if (distance <= maximumDistance && distance < bestDistance) {
+          bestDistance = distance;
+          best = { value, distanceCells, ...(includeCoordinates ? { x, y } : {}) };
+        }
       }
     }
-    if (best) return best;
+    if (best && !distanceForCell) return best;
   }
-  return null;
+  return best;
 }
 
 export function temporalCoordinateToIso(value, units) {
@@ -92,40 +100,74 @@ export function temporalCoordinateToIso(value, units) {
   return new Date(origin + Number(value) * unitMs).toISOString();
 }
 
-function readUfzFile(path, variableName, locations, { maxRadius = 6 } = {}) {
+function distanceKm(longitude, latitude, otherLongitude, otherLatitude) {
+  const radians = Math.PI / 180;
+  const deltaLatitude = (otherLatitude - latitude) * radians;
+  const deltaLongitude = (otherLongitude - longitude) * radians;
+  const a = Math.sin(deltaLatitude / 2) ** 2 + Math.cos(latitude * radians) *
+    Math.cos(otherLatitude * radians) * Math.sin(deltaLongitude / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+}
+
+export function readUfzFile(path, variableName, locations, { maxRadius, maximumDistanceKm = 24 } = {}) {
   const file = new h5wasm.File(path, "r");
   try {
-    const xValues = file.get("easting").value;
-    const yValues = file.get("northing").value;
+    const geographic = file.keys().includes("lon") && file.keys().includes("lat");
+    const xValues = file.get(geographic ? "lon" : "easting").value;
+    const yValues = file.get(geographic ? "lat" : "northing").value;
     const timeDataset = file.get("time");
     const times = timeDataset.value;
     const dataset = file.get(variableName);
-    const values = dataset.value;
+    if (!times.length || !dataset || dataset.shape.length !== 3 ||
+        dataset.shape[0] !== times.length || dataset.shape[1] !== yValues.length ||
+        dataset.shape[2] !== xValues.length) {
+      throw new Error(`Unexpected UFZ ${variableName} grid dimensions`);
+    }
     const fillValue = Number(scalar(attribute(dataset, "_FillValue")));
-    const timeIndex = times.length - 1;
-    const sliceOffset = timeIndex * xValues.length * yValues.length;
-    const latest = values.subarray(sliceOffset, sliceOffset + xValues.length * yValues.length);
+    const timeIndex = Array.from(times).reduce((latestIndex, value, index) =>
+      value > times[latestIndex] ? index : latestIndex, 0);
+    // Only decode the newest plane, not all 14 days of the v2 geographic grid.
+    const latest = dataset.slice([[timeIndex, timeIndex + 1], [], []]);
     const validAt = temporalCoordinateToIso(times[timeIndex], attribute(timeDataset, "units"));
-    const cellSizeM = Math.abs(xValues[1] - xValues[0]);
+    const xSpacing = Math.abs(xValues[1] - xValues[0]);
+    const ySpacing = Math.abs(yValues[1] - yValues[0]);
+    const resolutionKm = geographic ? ySpacing * Math.PI / 180 * 6371 : ySpacing / 1000;
     const result = new Map();
 
     for (const location of locations) {
-      const [x, y] = proj4("EPSG:4326", "EPSG:31468", [location.longitude, location.latitude]);
+      const [x, y] = geographic ? [location.longitude, location.latitude]
+        : proj4("EPSG:4326", "EPSG:31468", [location.longitude, location.latitude]);
+      const geographicDistance = (column, row) =>
+        distanceKm(location.longitude, location.latitude, xValues[column], yValues[row]);
+      const minimumCellKm = geographic ? Math.min(resolutionKm,
+        distanceKm(location.longitude, location.latitude, location.longitude + xSpacing, location.latitude)) : 0;
       const sample = nearestValidGridValue({
         data: latest,
         width: xValues.length,
         height: yValues.length,
         xIndex: nearestIndex(xValues, x),
         yIndex: nearestIndex(yValues, y),
-        maxRadius,
+        // Preserve a bounded physical search across the finer v2 grid. Six v1
+        // cells covered roughly 24 km; six geographic cells no longer do.
+        maxRadius: maxRadius ?? (geographic ? Math.ceil(maximumDistanceKm / minimumCellKm) : 6),
+        includeCoordinates: true,
+        distanceForCell: geographic ? geographicDistance : null,
+        maximumDistance: geographic ? maximumDistanceKm : Infinity,
         isValid: (value) => finite(value) && value !== fillValue && value > -9000
       });
       result.set(location.id, sample ? {
         value: sample.value,
-        distanceKm: sample.distanceCells * cellSizeM / 1000
+        distanceKm: geographic
+          ? distanceKm(location.longitude, location.latitude, xValues[sample.x], yValues[sample.y])
+          : Math.hypot(xValues[sample.x] - x, yValues[sample.y] - y) / 1000
       } : null);
     }
-    return { validAt, result, resolutionKm: cellSizeM / 1000 };
+    return {
+      validAt, result, resolutionKm: round(resolutionKm, 2),
+      grid: geographic ? "EPSG:4326" : "EPSG:31468",
+      version: String(scalar(attribute(file, "gdm_version")) || (geographic ? "2" : "1")),
+      ...(geographic ? { spacingDegrees: { longitude: xSpacing, latitude: ySpacing } } : {})
+    };
   } finally {
     file.close();
   }
@@ -134,7 +176,7 @@ function readUfzFile(path, variableName, locations, { maxRadius = 6 } = {}) {
 export function readUfzContextFromFiles(paths, locations) {
   const topsoil = readUfzFile(paths.topsoil, "SMI", locations);
   const total = readUfzFile(paths.total, "SMI", locations);
-  const plantAvailable = readUfzFile(paths.plantAvailable, "nFK", locations);
+  const plantAvailable = readUfzFile(paths.plantAvailable, "PAW_0_25cm", locations);
   const basins = new Map();
 
   for (const location of locations) {
@@ -145,7 +187,8 @@ export function readUfzContextFromFiles(paths, locations) {
       ufzTopsoilSmi: top ? round(top.value, 3) : null,
       ufzTotalSmi: all ? round(all.value, 3) : null,
       ufzPlantAvailableWaterPct: nfk ? round(nfk.value, 1) : null,
-      ufzCellDistanceKm: round(Math.max(top?.distanceKm || 0, all?.distanceKm || 0, nfk?.distanceKm || 0), 1)
+      ufzCellDistanceKm: top || all || nfk
+        ? round(Math.max(top?.distanceKm || 0, all?.distanceKm || 0, nfk?.distanceKm || 0), 1) : null
     });
   }
 
@@ -153,6 +196,13 @@ export function readUfzContextFromFiles(paths, locations) {
     status: "available",
     validAt: [topsoil.validAt, total.validAt, plantAvailable.validAt].sort()[0],
     resolutionKm: topsoil.resolutionKm,
+    grid: topsoil.grid,
+    version: topsoil.version,
+    spacingDegrees: topsoil.spacingDegrees,
+    componentDates: { topsoil: topsoil.validAt, total: total.validAt, plantAvailable: plantAvailable.validAt },
+    smiAveragingDays: 14,
+    percentileReferencePeriod: "1974-2023",
+    maximumSamplingDistanceKm: 24,
     basins
   };
 }
@@ -346,7 +396,7 @@ export async function fetchGridContexts(locations, fetchWithRetry) {
     const dwdValidAt = new Date(endPosition).toISOString();
     const dwdPaths = Object.fromEntries(Object.keys(DWD_SOIL_COVERAGES).map((key) => [key, join(directory, `dwd-${key}.nc`)]));
 
-    await Promise.all([
+    const downloads = await Promise.allSettled([
       downloadTo(fetchWithRetry(GRID_SOURCE_URLS.ufzTopsoil), ufzPaths.topsoil),
       downloadTo(fetchWithRetry(GRID_SOURCE_URLS.ufzTotal), ufzPaths.total),
       downloadTo(fetchWithRetry(GRID_SOURCE_URLS.ufzPlantAvailable), ufzPaths.plantAvailable),
@@ -355,6 +405,8 @@ export async function fetchGridContexts(locations, fetchWithRetry) {
         downloadTo(fetchWithRetry(dwdCoverageUrl(coverage, dwdValidAt)), dwdPaths[key])
       )
     ]);
+    const failure = downloads.find(result => result.status === "rejected");
+    if (failure) throw failure.reason;
 
     return {
       ufz: readUfzContextFromFiles(ufzPaths, locations),

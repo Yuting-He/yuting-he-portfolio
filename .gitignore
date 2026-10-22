@@ -4,3 +4,5 @@ desktop.ini
 *.tmp
 *.log
 node_modules/
+.cache/
+artifacts/

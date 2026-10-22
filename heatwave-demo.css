@@ -767,6 +767,17 @@ h1 {
   border-top: 1px solid var(--line);
 }
 
+.official-warning-context {
+  margin: 8px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.official-warning-context p {
+  margin: 0 0 6px;
+}
+
 .official-warning-row {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr);

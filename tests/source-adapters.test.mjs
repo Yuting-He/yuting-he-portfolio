@@ -1,9 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import h5wasm from "h5wasm/node";
 import {
   isValidDwdSoilRawValue,
   nearestValidGridValue,
-  temporalCoordinateToIso
+  temporalCoordinateToIso,
+  readUfzContextFromFiles,
+  readUfzFile
 } from "../scripts/grid-sources.mjs";
 import {
   isCurrentStationObservation,
@@ -29,6 +35,54 @@ test("HDF temporal coordinates and nearest valid cells preserve source meaning",
   assert.equal(isValidDwdSoilRawValue(-50, -9999), true);
   assert.equal(isValidDwdSoilRawValue(2500, -9999), true);
   assert.equal(isValidDwdSoilRawValue(-9999, -9999), false);
+});
+
+test("UFZ v2 reads geographic grids with descending latitude, latest time and PAW above 100 percent", async () => {
+  await h5wasm.ready;
+  const directory = await mkdtemp(join(tmpdir(), "heatlens-ufz-test-"));
+  const paths = Object.fromEntries(["topsoil", "total", "plantAvailable"].map(key => [key, join(directory, `${key}.nc`)]));
+  try {
+    for (const [key, path] of Object.entries(paths)) {
+      const file = new h5wasm.File(path, "w");
+      try {
+        file.create_attribute("gdm_version", "2.6.0");
+        file.create_dataset({ name: "lon", data: [11, 11.015625] });
+        file.create_dataset({ name: "lat", data: [48.015625, 48] });
+        file.create_dataset({ name: "time", data: [2, 1] });
+        file.get("time").create_attribute("units", "days since 2026-10-19 00:00:00");
+        const variable = key === "plantAvailable" ? "PAW_0_25cm" : "SMI";
+        const data = key === "plantAvailable" ? [118.5, 80, 50, -9999, 10, 10, 10, 10]
+          : [0.6, 0.4, 0.2, -9999, 0.9, 0.9, 0.9, 0.9];
+        file.create_dataset({ name: variable, data, shape: [2, 2, 2], dtype: "<d" });
+        file.get(variable).create_attribute("_FillValue", -9999);
+      } finally { file.close(); }
+    }
+    const context = readUfzContextFromFiles(paths, [
+      { id: "north", longitude: 11, latitude: 48.015625 },
+      { id: "south", longitude: 11, latitude: 48 }
+    ]);
+    assert.equal(context.validAt, "2026-10-21T00:00:00.000Z");
+    assert.equal(context.grid, "EPSG:4326");
+    assert.equal(context.basins.get("north").ufzTopsoilSmi, 0.6);
+    assert.equal(context.basins.get("south").ufzTopsoilSmi, 0.2);
+    assert.equal(context.basins.get("north").ufzPlantAvailableWaterPct, 118.5);
+    assert.equal(context.basins.get("north").ufzCellDistanceKm, 0);
+    const missing = readUfzFile(paths.topsoil, "SMI", [
+      { id: "missing", longitude: 11.015625, latitude: 48 }
+    ], { maxRadius: 0 });
+    assert.equal(missing.result.get("missing"), null);
+    const bounded = readUfzFile(paths.topsoil, "SMI", [
+      { id: "outside", longitude: 11.015625, latitude: 48 }
+    ], { maximumDistanceKm: 0.1 });
+    assert.equal(bounded.result.get("outside"), null);
+    const nearby = readUfzFile(paths.topsoil, "SMI", [
+      { id: "nearby", longitude: 11.015625, latitude: 48 }
+    ], { maximumDistanceKm: 2 });
+    assert.equal(nearby.result.get("nearby").value, 0.2);
+    assert.ok(nearby.result.get("nearby").distanceKm > 1 && nearby.result.get("nearby").distanceKm < 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("DWD station discovery and POI observation parsing handle source encodings", () => {

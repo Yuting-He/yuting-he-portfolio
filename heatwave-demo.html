@@ -267,6 +267,7 @@
             </section>
             <section class="official-warning-block" aria-labelledby="official-warning-heading">
               <p class="section-label" id="official-warning-heading" data-i18n="authoritativeContext">Authoritative context</p>
+              <div class="official-warning-context" id="official-warning-context"></div>
               <div class="official-warning-row">
                 <span data-i18n="heat">Heat</span>
                 <div>
@@ -318,7 +319,7 @@
             <article>
               <span>01</span>
               <h3 data-i18n="method1Title">Anchor forecasts in observed water state</h3>
-              <p data-i18n="method1Body">UFZ soil-moisture percentiles, DWD crop-specific nFK, RADOLAN 24-hour rain, and DWD station temperatures provide a dated baseline for 614 sub-basins.</p>
+              <p data-i18n="method1Body">UFZ 14-day-mean soil-moisture percentiles and daily plant-available water, DWD crop-specific nFK, RADOLAN 24-hour rain, and DWD station temperatures provide a dated baseline for 614 sub-basins.</p>
             </article>
             <article>
               <span>02</span>
@@ -369,8 +370,8 @@
                 </tr>
                 <tr>
                   <td><a href="https://www.ufz.de/index.php?de=37937&m=0">UFZ Dürremonitor</a> / <a href="https://www.dwd.de/bodenfeuchteviewer" data-i18n="dwdSoilLink">DWD soil moisture</a></td>
-                  <td data-i18n="dataSoilRole">Topsoil and total-soil SMI, plant-available water, and AMBAV crop-specific percent nFK using local BÜK1000 soils</td>
-                  <td data-i18n="dataSoilUse">UFZ 4 km percentile grid; DWD 1 km crop grid averaged to 30, 60, or 90 cm</td>
+                  <td data-i18n="dataSoilRole">UFZ 14-day-mean topsoil and total-soil SMI, daily 0–25 cm plant-available water, and DWD AMBAV crop-specific percent nFK using local BÜK1000 soils</td>
+                  <td data-i18n="dataSoilUse">UFZ v2 geographic grid at 0.015625° spacing; DWD 1 km crop grid averaged to 30, 60, or 90 cm</td>
                   <td data-i18n="dataSoilStatus">Machine-ingested with source date and nearest-cell distance</td>
                 </tr>
                 <tr>
@@ -382,8 +383,8 @@
                 <tr>
                   <td><a href="https://www.dwd.de/DE/wetter/warnungen_aktuell/objekt_einbindung/objekteinbindung.html" data-i18n="dwdWarningsLink">DWD warnings</a> / <a href="https://www.hochwasserzentralen.de/" data-i18n="floodPortalsLink">state flood portals</a></td>
                   <td data-i18n="dataWarningsRole">Authoritative heat, heavy-rain, gauge, and river context</td>
-                  <td data-i18n="dataWarningsUse">Current official services</td>
-                  <td data-i18n="dataWarningsStatus">Displayed separately and never replaced by a HeatLens score</td>
+                  <td data-i18n="dataWarningsUse">Timestamped state-level warning feed and links to official services</td>
+                  <td data-i18n="dataWarningsStatus">Freshness checked independently; verify local applicability with DWD</td>
                 </tr>
               </tbody>
             </table>

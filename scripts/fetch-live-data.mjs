@@ -7,6 +7,7 @@ import { fetchGridContexts, GRID_SOURCE_URLS } from "./grid-sources.mjs";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASIN_PATH = resolve(ROOT, "assets/hydrobasins-de-level8.geojson");
 const OUTPUT_PATH = resolve(ROOT, "assets/live/forecast.json");
+const REPORT_PATH = resolve(ROOT, "artifacts/refresh-status.json");
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/dwd-icon";
 const OPEN_METEO_ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble";
 const DWD_WARNINGS_URL = "https://www.dwd.de/DWD/warnungen/warnapp/json/warnings.json";
@@ -110,7 +111,9 @@ export async function fetchWithRetry(url, attempts = 5) {
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      const response = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+      const response = await fetch(url, {
+        headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(120_000)
+      });
       if (!response.ok) {
         const detail = (await response.text()).slice(0, 240);
         const error = new Error(`${response.status} ${response.statusText}${detail ? `: ${detail}` : ""}`);
@@ -315,7 +318,8 @@ export function parseDwdWarnings(text) {
   if (start < 0 || end <= start) throw new Error("Unexpected DWD warning payload");
   const payload = JSON.parse(text.slice(start + 1, end));
   const states = {};
-  Object.values(payload.warnings || {}).flat().forEach((warning) => {
+  Object.entries(payload.warnings || {}).flatMap(([regionId, warnings]) =>
+    warnings.map((warning) => ({ ...warning, regionId: String(regionId) }))).forEach((warning) => {
     const stateId = STATE_IDS[warning.stateShort];
     if (!stateId) return;
     if (!states[stateId]) {
@@ -330,6 +334,8 @@ export function parseDwdWarnings(text) {
     if (isHeat) target.heatWarningCount += 1;
     if (isRain) target.rainWarningCount += 1;
     target.warnings.push({
+      regionId: warning.regionId,
+      warnCellId: String(warning.warnCellId || warning.regionId),
       regionName: warning.regionName,
       event: warning.event,
       headline: warning.headline,
@@ -397,6 +403,12 @@ export function validateLiveDataset(dataset, expectedBasinCount = 614) {
     ids.add(basin.id);
     if (!Array.isArray(basin.days) || basin.days.map((day) => day.date).join() !== dates.join()) {
       throw new Error(`Date window mismatch for basin ${basin.id}`);
+    }
+    // These fields are required by the browser loader for every basin. Reject
+    // an unusable release here instead of publishing a snapshot the UI rejects.
+    if (![basin.context?.ufzTopsoilSmi, basin.context?.radolanPrecipitation24hMm,
+      basin.context?.dwdLatestTemperatureC].every(finite)) {
+      throw new Error(`Observed context is incomplete for basin ${basin.id}`);
     }
     if (finite(basin.context?.radolanPrecipitation24hMm)) sourceCoverage.radolan += 1;
     if ([basin.context?.ufzTopsoilSmi, basin.context?.ufzTotalSmi, basin.context?.ufzPlantAvailableWaterPct].every(finite)) {
@@ -467,7 +479,31 @@ async function fetchDwdWarnings() {
   }
 }
 
-export async function buildLiveDataset() {
+const UFZ_DATE_FORMATTER = new Intl.DateTimeFormat("en", {
+  timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit"
+});
+
+function ufzAnalysisDate(timestamp) {
+  const parts = Object.fromEntries(UFZ_DATE_FORMATTER.formatToParts(new Date(timestamp))
+    .map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+export function datedUfzValues(values, componentDates, date) {
+  // Forecast days use Berlin time; a late UTC observation can belong to the
+  // following analysis day and must not appear in an earlier historical view.
+  const useTopsoil = date >= ufzAnalysisDate(componentDates.topsoil);
+  const useTotal = date >= ufzAnalysisDate(componentDates.total);
+  const usePlantAvailable = date >= ufzAnalysisDate(componentDates.plantAvailable);
+  return {
+    ufzTopsoilSmi: useTopsoil ? values.ufzTopsoilSmi : null,
+    ufzTotalSmi: useTotal ? values.ufzTotalSmi : null,
+    ufzPlantAvailableWaterPct: usePlantAvailable ? values.ufzPlantAvailableWaterPct : null,
+    ufzCellDistanceKm: useTopsoil || useTotal || usePlantAvailable ? values.ufzCellDistanceKm : null
+  };
+}
+
+export async function buildLiveDataset({ onSource = () => {} } = {}) {
   const collection = JSON.parse(await readFile(BASIN_PATH, "utf8"));
   const basinLocations = collection.features.map((feature) => {
     const [longitude, latitude] = geometryCentroid(feature.geometry);
@@ -477,19 +513,52 @@ export async function buildLiveDataset() {
   for (let index = 0; index < basinLocations.length; index += BATCH_SIZE) {
     batches.push(basinLocations.slice(index, index + BATCH_SIZE));
   }
-  const contextPromise = Promise.all([
-    fetchGridContexts(basinLocations, fetchWithRetry),
-    fetchDwdTemperatureContext(basinLocations, fetchWithRetry),
-    fetchDwdWarnings()
+  const recordSource = (name, value, validAt) => {
+    onSource(name, { status: value.status, validAt,
+      maximumAgeHours: SOURCE_FRESHNESS_LIMIT_HOURS[name] ?? 8 });
+    return value;
+  };
+  const tagged = (name, promise) => promise.catch((error) => {
+    error.source ||= name;
+    onSource(name, { status: "unavailable", validAt: null,
+      maximumAgeHours: SOURCE_FRESHNESS_LIMIT_HOURS[name] ?? 8 });
+    throw error;
+  });
+  // Verify independent source context before spending the forecast API quota.
+  const contextResults = await Promise.allSettled([
+    tagged("grids", fetchGridContexts(basinLocations, fetchWithRetry).then((grids) => {
+      recordSource("ufz", grids.ufz, grids.ufz.validAt);
+      recordSource("dwdSoil", grids.dwdSoil, grids.dwdSoil.validAt);
+      recordSource("radolan", grids.radolan, grids.radolan.periodEnd);
+      return grids;
+    })),
+    tagged("dwdTemperature", fetchDwdTemperatureContext(basinLocations, fetchWithRetry)
+      .then((value) => recordSource("dwdTemperature", value, value.observedAt))),
+    fetchDwdWarnings().then((value) => recordSource("warnings", value, value.issuedAt))
   ]);
+  const failedContext = contextResults.find(result => result.status === "rejected");
+  if (failedContext) throw failedContext.reason;
+  const [gridContexts, temperatureContext, warnings] = contextResults.map(result => result.value);
+  const contextFreshness = sourceFreshnessAt({
+    generatedAt: new Date().toISOString(),
+    observations: { radolan: gridContexts.radolan, dwdTemperature: temperatureContext },
+    soilMoisture: { ufz: gridContexts.ufz, dwd: gridContexts.dwdSoil }
+  });
+  for (const [source, status] of Object.entries(contextFreshness)) {
+    if (!status.current) {
+      const error = new Error(`${source} source time ${status.validAt} is outside the ${status.maximumAgeHours}-hour freshness policy`);
+      error.source = source;
+      throw error;
+    }
+  }
   const forecastResults = [];
   const d2Results = [];
   const seamlessResults = [];
   for (let index = 0; index < batches.length; index += 1) {
     const [forecast, d2, seamless] = await Promise.all([
-      fetchForecastBatch(batches[index]),
-      fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.d2),
-      fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.seamless)
+      tagged("forecast", fetchForecastBatch(batches[index])),
+      tagged("ensembleD2", fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.d2)),
+      tagged("ensembleSeamless", fetchEnsembleBatch(batches[index], ENSEMBLE_MODELS.seamless))
     ]);
     forecastResults.push(forecast);
     d2Results.push(d2);
@@ -499,8 +568,6 @@ export async function buildLiveDataset() {
   const basins = forecastResults.flat();
   const d2ById = new Map(d2Results.flat().map((basin) => [basin.id, basin.days]));
   const seamlessById = new Map(seamlessResults.flat().map((basin) => [basin.id, basin.days]));
-  const [gridContexts, temperatureContext, warnings] = await contextPromise;
-  const ufzValidDate = gridContexts.ufz.validAt.slice(0, 10);
   const dwdSoilValidDate = gridContexts.dwdSoil.validAt.slice(0, 10);
   const dates = basins[0]?.days.map((day) => day.date) || [];
   if (basins.length !== basinLocations.length || !dates.length) throw new Error("Incomplete forecast dataset");
@@ -523,7 +590,6 @@ export async function buildLiveDataset() {
       },
       days: basin.days.map((day) => {
         const ensemble = ensembleByDate.get(day.date);
-        const useUfzBaseline = day.date >= ufzValidDate;
         const useDwdSoilBaseline = day.date >= dwdSoilValidDate;
         const useLatestObservations = day.date >= temperature.dwdCurrentDayDate;
         const observedTmaxC = day.date === temperature.dwdPreviousDayDate
@@ -538,10 +604,7 @@ export async function buildLiveDataset() {
         );
         return {
           ...day,
-          ufzTopsoilSmi: useUfzBaseline ? ufz.ufzTopsoilSmi : null,
-          ufzTotalSmi: useUfzBaseline ? ufz.ufzTotalSmi : null,
-          ufzPlantAvailableWaterPct: useUfzBaseline ? ufz.ufzPlantAvailableWaterPct : null,
-          ufzCellDistanceKm: useUfzBaseline ? ufz.ufzCellDistanceKm : null,
+          ...datedUfzValues(ufz, gridContexts.ufz.componentDates, day.date),
           ...datedDwdSoil,
           dwdSoilCellDistanceKm: useDwdSoilBaseline ? dwdSoil.dwdSoilCellDistanceKm : null,
           radolanPrecipitation24hMm: useLatestObservations ? radolan.radolanPrecipitation24hMm : null,
@@ -608,8 +671,17 @@ export async function buildLiveDataset() {
         status: gridContexts.ufz.status,
         validAt: gridContexts.ufz.validAt,
         resolutionKm: gridContexts.ufz.resolutionKm,
+        version: gridContexts.ufz.version,
+        grid: gridContexts.ufz.grid,
+        spacingDegrees: gridContexts.ufz.spacingDegrees,
+        componentDates: gridContexts.ufz.componentDates,
+        smiAveragingDays: gridContexts.ufz.smiAveragingDays,
+        percentileReferencePeriod: gridContexts.ufz.percentileReferencePeriod,
+        maximumSamplingDistanceKm: gridContexts.ufz.maximumSamplingDistanceKm,
         sourceUrl: "https://www.ufz.de/index.php?de=37937",
-        variables: "topsoil SMI, total-soil SMI, and 0-25 cm plant-available water"
+        sourceFiles: { topsoil: GRID_SOURCE_URLS.ufzTopsoil, total: GRID_SOURCE_URLS.ufzTotal,
+          plantAvailable: GRID_SOURCE_URLS.ufzPlantAvailable },
+        variables: "14-day-mean topsoil and total-soil SMI percentiles; daily 0-25 cm plant-available water (%)"
       },
       dwd: {
         status: gridContexts.dwdSoil.status,
@@ -628,17 +700,44 @@ export async function buildLiveDataset() {
   });
 }
 
+export async function runRefresh({ buildDataset = buildLiveDataset, outputPath = OUTPUT_PATH,
+  reportPath = REPORT_PATH, now = () => new Date() } = {}) {
+  const report = { schema: "heatlens-refresh-status/v1", startedAt: now().toISOString(),
+    finishedAt: null, status: "running", generatedAt: null, forecastDates: [], sources: {}, error: null };
+  await mkdir(dirname(reportPath), { recursive: true });
+  const saveReport = () => writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  await saveReport();
+  try {
+    const dataset = await buildDataset({ onSource: (source, status) => { report.sources[source] = status; } });
+    report.generatedAt = dataset.generatedAt;
+    report.forecastDates = dataset.forecast.dates;
+    // The published snapshot is replaced only after every required validation succeeds.
+    await mkdir(dirname(outputPath), { recursive: true });
+    const temporaryPath = `${outputPath}.tmp`;
+    await writeFile(temporaryPath, `${JSON.stringify(dataset)}\n`, "utf8");
+    await rename(temporaryPath, outputPath);
+    report.status = "success";
+    return dataset;
+  } catch (error) {
+    report.status = "failed";
+    report.error = { message: error.message, source: error.source || null };
+    throw error;
+  } finally {
+    report.finishedAt = now().toISOString();
+    for (const source of Object.values(report.sources)) {
+      const age = (Date.parse(report.finishedAt) - Date.parse(source.validAt)) / 3_600_000;
+      source.ageHours = finite(age) ? round(age, 1) : null;
+      if (source.status === "available" && (!finite(age) || age < -2 || age > source.maximumAgeHours)) {
+        source.status = "stale";
+      }
+    }
+    await saveReport();
+  }
+}
+
 async function main() {
-  const dataset = await buildLiveDataset();
-  await mkdir(dirname(OUTPUT_PATH), { recursive: true });
-  const temporaryPath = `${OUTPUT_PATH}.tmp`;
-  await writeFile(temporaryPath, `${JSON.stringify(dataset)}\n`, "utf8");
-  await rename(temporaryPath, OUTPUT_PATH);
-  console.log(
-    `Wrote ${dataset.basins.length} basins x ${dataset.forecast.dates.length} days; ` +
-    `RADOLAN ${dataset.observations.radolan.status}; UFZ ${dataset.soilMoisture.ufz.status}; ` +
-    `DWD stations ${dataset.observations.dwdTemperature.stationCount}; warnings ${dataset.warnings.status}`
-  );
+  const dataset = await runRefresh();
+  console.log(`Wrote ${dataset.basins.length} basins x ${dataset.forecast.dates.length} days; generated ${dataset.generatedAt}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

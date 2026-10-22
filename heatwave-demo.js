@@ -47,9 +47,9 @@ import {
   parseViewState,
   resolveForecastDate,
   runtimeSourceFreshness,
-  serializeViewState,
-  warningAppliesToDate
+  serializeViewState
 } from "./heatwave-state.js";
+import { warningContextForState, warningPresentation } from "./heatwave-warnings.js";
 
 const STATE_URL = "./assets/nuts1-de.geojson";
 const DISTRICT_URL = "./assets/nuts3-de.geojson";
@@ -81,6 +81,7 @@ const state = {
   availableDates: [],
   freshness: { label: "Unavailable", className: "unavailable", ageHours: null, stale: true },
   sourceFreshness: { sources: {}, staleSources: [], stale: true },
+  warningContextStatus: "unavailable",
   predictionCache: new Map(),
   metricCache: new Map(),
   d3: null,
@@ -143,6 +144,7 @@ elements.officialHeatDetail = document.querySelector("#official-heat-detail");
 elements.officialRainTitle = document.querySelector("#official-rain-title");
 elements.officialRainDetail = document.querySelector("#official-rain-detail");
 elements.officialWarningHeading = document.querySelector("#official-warning-heading");
+elements.officialWarningContext = document.querySelector("#official-warning-context");
 elements.forcingSource = document.querySelector("#forcing-source");
 elements.sourceUpdated = document.querySelector("#source-updated");
 elements.operationalStatus = document.querySelector("#operational-status");
@@ -589,7 +591,7 @@ function renderSummary() {
   elements.dataStatus.textContent = plain
     ? state.freshness.stale
       ? isGerman() ? "Veraltet - Hinweise pausiert" : "Out of date - advice paused"
-      : isGerman() ? `Aktuell, ${freshnessText()}` : `Updated ${freshnessText()}`
+      : isGerman() ? `Aktuell, ${freshnessText()}` : `Current, ${freshnessText()}`
     : `${localizedFreshnessLabel()} - ${freshnessText()}`;
   elements.modelVersion.textContent = `v${MODEL_VERSION}`;
   elements.liveStatusBadge.textContent = plain
@@ -946,68 +948,37 @@ function stateIdForUnit(unit) {
 }
 
 function warningContextForUnit(unit) {
-  const warningFeed = state.liveData.warnings;
-  const stateId = stateIdForUnit(unit);
-  return warningFeed.states?.[stateId] || { heatWarningCount: 0, rainWarningCount: 0, warnings: [] };
+  return warningContextForState(state.liveData.warnings, {
+    stateId: stateIdForUnit(unit),
+    unitLevel: unit.level,
+    selectedDate: state.date
+  });
+}
+
+function warningContextStatus(context) {
+  return JSON.stringify([context.freshness.status, context.dateKind, context.actionOptions]);
 }
 
 function renderOfficialWarning(unit) {
-  const warningFeed = state.liveData.warnings;
-  const regionWarnings = warningContextForUnit(unit);
-  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
-  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
-  const plain = state.detail === "plain";
-  elements.officialWarningHeading.textContent = isRetrospective
-    ? isGerman() ? "Aktueller amtlicher Kontext - kein Warnarchiv" : "Current authoritative context - not a warning archive"
-    : isGerman() ? "Aktueller amtlicher Kontext" : "Current authoritative context";
-  const contextPrefix = isRetrospective
-    ? isGerman()
-      ? `Aktueller Feed ausgegeben am ${formatTimestamp(warningFeed.issuedAt)}; die rückblickende Abdeckung für ${formatDate(state.date)} kann unvollständig sein. `
-      : `Current feed issued ${formatTimestamp(warningFeed.issuedAt)}; retrospective coverage may be incomplete for ${formatDate(state.date)}. `
-    : "";
-  if (warningFeed.status !== "available") {
-    elements.officialHeatTitle.textContent = isGerman()
-      ? plain ? "Amtlicher Warnfeed nicht verfügbar" : "DWD-Feed nicht verfügbar"
-      : plain ? "Official warning feed unavailable" : "DWD feed unavailable";
-    elements.officialHeatDetail.textContent = plain
-      ? isGerman() ? "Vor einer Schutzentscheidung den amtlichen Wetterwarndienst öffnen." : "Open the official weather-warning service before making a protective decision."
-      : isGerman() ? "Vor einer Schutzentscheidung den amtlichen DWD-Dienst öffnen." : "Open the official DWD service before making a protective decision.";
-    elements.officialRainTitle.textContent = isGerman() ? "Regenwarnkontext nicht verfügbar" : "Rain warning context unavailable";
-    elements.officialRainDetail.textContent = isGerman()
-      ? "DWD und zuständige Hochwasserzentrale direkt prüfen."
-      : "Check DWD and the responsible state flood portal directly.";
-    return;
-  }
-  const heatWarnings = (regionWarnings?.warnings || [])
-    .filter((warning) => warning.isHeat && warningAppliesToDate(warning, state.date));
-  if (heatWarnings.length) {
-    elements.officialHeatTitle.textContent = heatWarnings[0].event || (isGerman() ? "Aktive DWD-Hitzewarnung" : "Active DWD heat warning");
-    elements.officialHeatDetail.textContent = `${contextPrefix}${heatWarnings[0].regionName}: ${heatWarnings[0].headline || (isGerman() ? "Details beim DWD" : "See DWD for details")}.`;
-  } else {
-    elements.officialHeatTitle.textContent = isGerman()
-      ? plain ? "Keine amtliche Hitzewarnung überschneidet das ausgewählte Datum" : "Keine veröffentlichte DWD-Hitzewarnung überschneidet das ausgewählte Datum"
-      : plain ? "No official heat warning overlaps the selected date" : "No published DWD heat warning overlaps the selected date";
-    elements.officialHeatDetail.textContent = isRetrospective
-      ? isGerman() ? "Der aktuelle Feed ist kein Warnarchiv für dieses vergangene Datum." : "The current feed is not a warning archive for this retrospective date."
-      : isGerman() ? "Der aktuelle Feed deckt nicht den gesamten Prognosezeitraum ab; dies ist keine Entwarnung." : "The current feed does not cover the full forecast horizon; this is not an all-clear.";
-  }
-  const rainWarnings = (regionWarnings?.warnings || [])
-    .filter((warning) => warning.isRain && warningAppliesToDate(warning, state.date));
-  if (rainWarnings.length) {
-    elements.officialRainTitle.textContent = rainWarnings[0].event || (isGerman() ? "Aktive DWD-Regenwarnung" : "Active DWD rain warning");
-    elements.officialRainDetail.textContent = `${contextPrefix}${rainWarnings[0].regionName}: ${rainWarnings[0].headline || (isGerman() ? "Details beim DWD" : "See DWD for details")}.`;
-  } else {
-    elements.officialRainTitle.textContent = isGerman()
-      ? plain ? "Keine amtliche Regenwarnung überschneidet das ausgewählte Datum" : "Keine veröffentlichte DWD-Regenwarnung überschneidet das ausgewählte Datum"
-      : plain ? "No official rain warning overlaps the selected date" : "No published DWD rain warning overlaps the selected date";
-    elements.officialRainDetail.textContent = isGerman()
-      ? plain
-        ? `Der aktuelle Feed wurde am ${formatTimestamp(warningFeed.issuedAt)} ausgegeben und deckt spätere Daten möglicherweise nicht ab. Bei Flusshochwasser die zuständige Hochwasserzentrale direkt prüfen; diese Karte prognostiziert keine Hochwasserwahrscheinlichkeit.`
-        : `Feed vom ${formatTimestamp(warningFeed.issuedAt)}; der vollständige Prognosezeitraum ist nicht abgedeckt. Flusshochwasser erfordert Informationen der Hochwasserzentralen; der Nässeindex ist keine Hochwasserwahrscheinlichkeit.`
-      : plain
-        ? `The current feed was issued ${formatTimestamp(warningFeed.issuedAt)} and may not cover later dates. For river flooding, check the state flood service directly; this map does not predict flood probability.`
-        : `Feed issued ${formatTimestamp(warningFeed.issuedAt)} and does not cover the full forecast horizon. River flooding requires state flood-portal information; the wet index is not a flood probability.`;
-  }
+  const context = warningContextForUnit(unit);
+  const stateFeature = state.stateById.get(context.stateId);
+  const presentation = warningPresentation(context, {
+    language: state.language,
+    stateName: stateFeature ? featureName(stateFeature, "state") : context.stateId
+  });
+  state.warningContextStatus = warningContextStatus(context);
+  elements.officialWarningHeading.textContent = presentation.heading;
+  elements.officialWarningContext.replaceChildren(...presentation.shared.map((text) => {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = text;
+    return paragraph;
+  }));
+  elements.officialHeatTitle.textContent = presentation.heat.title;
+  elements.officialHeatDetail.textContent = presentation.heat.detail;
+  elements.officialHeatDetail.hidden = !presentation.heat.detail;
+  elements.officialRainTitle.textContent = presentation.rain.title;
+  elements.officialRainDetail.textContent = presentation.rain.detail;
+  elements.officialRainDetail.hidden = !presentation.rain.detail;
 }
 
 function smiClass(value) {
@@ -1214,13 +1185,7 @@ function renderDetails() {
     renderTrend(unit);
     return;
   }
-  const warningContext = warningContextForUnit(unit);
-  const datedWarnings = (warningContext.warnings || [])
-    .filter((warning) => warningAppliesToDate(warning, state.date));
-  const actionOptions = {
-    heatWarningCount: datedWarnings.filter((warning) => warning.isHeat).length,
-    rainWarningCount: datedWarnings.filter((warning) => warning.isRain).length
-  };
+  const actionOptions = warningContextForUnit(unit).actionOptions;
   const guidance = isGerman()
     ? technicalGuidanceForDe(metrics, state.audience, actionOptions)
     : actionsFor(metrics, state.audience, actionOptions);
@@ -1351,8 +1316,8 @@ function renderDetails() {
     ? (isGerman() ? plainDecisionNoteDe : plainDecisionNote)(state.audience, { isRetrospective, stale: state.freshness.stale })
     : isRetrospective
     ? isGerman()
-      ? "Historische Ansichten dienen nur der Auswertung und Modellbewertung. Sie dürfen nicht als heutige Hinweise für Bevölkerung, Landwirtschaft oder Kommunen gelesen werden; der aktuelle DWD-Feed ist kein Warnarchiv."
-      : "Historical views support review and model evaluation only. They must not be read as present-day resident, farm, or municipal instructions; the current DWD feed is not a warning archive."
+      ? "Historische Ansichten dienen nur der Auswertung und Modellbewertung. Sie dürfen nicht als heutige Hinweise für Bevölkerung, Landwirtschaft oder Kommunen gelesen werden; der geladene DWD-Feed ist kein Warnarchiv."
+      : "Historical views support review and model evaluation only. They must not be read as present-day resident, farm, or municipal instructions; the loaded DWD feed is not a warning archive."
     : state.freshness.stale
     ? state.freshness.sourceStale
       ? isGerman()
@@ -1550,6 +1515,7 @@ function currentSnapshot() {
     region: { id: unit.id, name: featureName(unit.feature, unit.level), level: unit.level },
     risk: { score, severity: severity(score).label, metrics },
     officialWarnings: state.liveData.warnings,
+    warningContext: warningContextForUnit(unit),
     boundary: "Live model inputs with an uncalibrated screening index; not an official warning, clinical tool, or agronomic instruction."
   };
 }
@@ -1707,7 +1673,8 @@ window.setInterval(() => {
   const previousStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
   updateOperationalFreshness();
   const nextStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
-  if (previousStatus !== nextStatus) {
+  const warningStatus = warningContextStatus(warningContextForUnit(selectedUnit()));
+  if (previousStatus !== nextStatus || state.warningContextStatus !== warningStatus) {
     renderSummary();
     renderDetails();
   }

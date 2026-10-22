@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import {
   geometryCentroid,
+  datedUfzValues,
   parseDwdWarnings,
   summarizeForecastResponse,
   validateLiveDataset
@@ -11,6 +12,29 @@ import { aggregatePredictions, buildLiveBasinPrediction } from "../heatwave-mode
 
 const snapshot = JSON.parse(await readFile(new URL("../assets/live/forecast.json", import.meta.url), "utf8"));
 const crosswalk = JSON.parse(await readFile(new URL("../assets/basin-nuts3-crosswalk.json", import.meta.url), "utf8"));
+
+test("each UFZ component respects its own observation date", () => {
+  const values = { ufzTopsoilSmi: 0.2, ufzTotalSmi: 0.1, ufzPlantAvailableWaterPct: 65, ufzCellDistanceKm: 1 };
+  const componentDates = { topsoil: "2026-10-21T00:00:00Z", total: "2026-10-21T00:00:00Z",
+    plantAvailable: "2026-10-22T00:00:00Z" };
+  assert.deepEqual(datedUfzValues(values, componentDates, "2026-10-21"), {
+    ...values, ufzPlantAvailableWaterPct: null
+  });
+  assert.deepEqual(datedUfzValues(values, componentDates, "2026-10-22"), values);
+  assert.deepEqual(datedUfzValues(values, componentDates, "2026-10-20"), {
+    ufzTopsoilSmi: null, ufzTotalSmi: null, ufzPlantAvailableWaterPct: null, ufzCellDistanceKm: null
+  });
+});
+
+test("late UTC UFZ observations start on their Berlin analysis date", () => {
+  const values = { ufzTopsoilSmi: 0.2, ufzTotalSmi: 0.1, ufzPlantAvailableWaterPct: 65, ufzCellDistanceKm: 1 };
+  const componentDates = { topsoil: "2026-10-21T00:00:00Z", total: "2026-10-21T00:00:00Z",
+    plantAvailable: "2026-10-21T23:00:00Z" };
+  assert.deepEqual(datedUfzValues(values, componentDates, "2026-10-21"), {
+    ...values, ufzPlantAvailableWaterPct: null
+  });
+  assert.deepEqual(datedUfzValues(values, componentDates, "2026-10-22"), values);
+});
 
 test("published live snapshot covers every basin and nine analysis dates", () => {
   assert.equal(validateLiveDataset(snapshot), snapshot);
@@ -57,6 +81,14 @@ test("a stale component source invalidates an otherwise fresh snapshot", () => {
   const stale = structuredClone(snapshot);
   stale.soilMoisture.ufz.validAt = new Date(Date.parse(stale.generatedAt) - 120 * 3_600_000).toISOString();
   assert.throws(() => validateLiveDataset(stale), /ufz source time/i);
+});
+
+test("refresh rejects even one missing context field required by the browser", () => {
+  for (const field of ["ufzTopsoilSmi", "radolanPrecipitation24hMm", "dwdLatestTemperatureC"]) {
+    const incomplete = structuredClone(snapshot);
+    incomplete.basins[0].context[field] = null;
+    assert.throws(() => validateLiveDataset(incomplete), /Observed context is incomplete/);
+  }
 });
 
 test("published weather values stay within broad physical guardrails", () => {
@@ -200,6 +232,7 @@ test("DWD JSONP is parsed and heat alerts stay separate by state", () => {
   assert.equal(parsed.states.DE2.rainWarningCount, 1);
   assert.ok(parsed.states.DE2.warnings.some((warning) => warning.isHeat));
   assert.ok(parsed.states.DE2.warnings.some((warning) => warning.isRain));
+  assert.ok(parsed.states.DE2.warnings.every((warning) => warning.regionId === "x" && warning.warnCellId === "x"));
 });
 
 test("geometry centroid is stable for a simple polygon", () => {

@@ -54,18 +54,20 @@ GISCO NUTS 2024 and HydroBASINS are projected to EPSG:3035 for exact polygon int
 1. samples one representative centroid for each Level 8 sub-basin;
 2. queries Open-Meteo's DWD ICON seamless endpoint in rate-limited batches;
 3. queries ICON-D2-EPS daily means and hourly member standard deviations for the near term, then ICON-EU/Global EPS seamless fields for the remaining horizon;
-4. downloads and decodes UFZ topsoil SMI, total-soil SMI, and 0-25 cm plant-available water;
+4. downloads UFZ v2 geographic NetCDF grids (0.015625-degree longitude/latitude spacing), decodes the newest time plane with descending latitude preserved, and samples 14-day-mean topsoil/total-soil SMI plus daily 0-25 cm plant-available water; SMI uses the 1974-2023 reference period;
 5. downloads DWD AMBAV WCS grids for dominant land use, grass, maize, and winter wheat, then averages 10 cm layers to 30/60/90 cm root zones;
 6. decodes the DWD RADOLAN SF HDF5 rolling 24-hour, gauge-adjusted precipitation composite;
 7. builds a spatially distributed network of up to 160 DWD POI stations, maps observations to sub-basins with both mean and farthest-match distance retained, and reports area-weighted matched-pair bias and MAE rather than subtracting unmatched regional maxima;
 8. retains daily maximum/minimum and apparent temperature, precipitation, FAO ET0, VPD, and model soil moisture;
 9. derives heat/dry persistence and rolling three-day `precipitation - ET0`;
-10. parses DWD heat and heavy/persistent-rain warnings by state;
+10. parses DWD heat and heavy/persistent-rain warnings by state, preserving warning-cell/region identifiers for future verified local mapping;
 11. validates 614 unique basins, observed-source coverage, ensemble coverage, and one common two-past/seven-forecast-day window before atomic write.
 
 The public snapshot records every source's valid time, observation period, resolution, model, variables, station/cell distance, warning issue time, and completeness. Every accepted DWD station must itself be no more than 8 hours old. A refresh fails closed when RADOLAN or the retained DWD station network are more than 8 hours old, or when UFZ or DWD daily soil data are more than 96 hours old. The browser recalculates those limits against the current clock every minute, so a failed refresh suppresses actions as soon as a component expires rather than waiting for the 36-hour snapshot gate. GitHub Actions refreshes every six hours. Snapshots are current up to 18 hours, delayed from 18 to 36 hours, and stale after 36 hours. Stale scores remain visible for audit while actions are suppressed.
 
-UFZ and DWD soil values are dated baselines, not daily forecasts. They are never attached to a retrospective date before their own valid date, which prevents future-information leakage. For the valid date and later forecast dates they initialise the observed water-state context while ICON soil moisture and water balance provide the changing daily forecast. RADOLAN and latest station temperature are similarly withheld from earlier retrospective dates.
+UFZ and DWD soil values are dated baselines, not daily forecasts. They are never attached to a retrospective date before their own valid date, which prevents future-information leakage. For the valid date and later forecast dates they initialise the observed water-state context while ICON soil moisture and water balance provide the changing daily forecast. RADOLAN and latest station temperature are similarly withheld from earlier retrospective dates. UFZ component timestamps are recorded separately and each component respects its own date; the oldest component sets the combined freshness time. Plant-available water above 100% is retained. The v2 valid-cell fallback is capped at 24 km, a physical bound comparable to the former six 4 km cells; the actual geographic sampling distance is recorded and must not be interpreted as a local measurement.
+
+All publication triggers require a successful refresh and a separate real-clock check: snapshot age at most two hours, a contiguous nine-day window anchored on today's Berlin date, and unchanged required-source freshness limits. Failure preserves the deployed site and fails the workflow rather than reporting a green refresh. Per-attempt JSON diagnostics and the Actions summary record source ages and errors. Scheduled workflows must be re-enabled if GitHub disables them after inactivity.
 
 ## Screening indices
 
@@ -143,7 +145,7 @@ Every audience receives a different sequence:
 - **Gardeners** - selected ornamental-plant and growing-place checks, forecast-rain deferral, heat protection, drainage checks, seasonal context, and local watering-rule verification.
 - **Municipal teams** - official-source verification, heat-plan readiness, drainage and access checks, public-green-space triage, and a responsible-authority activation gate.
 
-Official warning counts affect the wording and urgency of verification only when the warning's Berlin-time start/end interval overlaps the selected date. They never enter the custom 0-100 score. The current feed is not presented as a retrospective archive or a warning forecast for the full horizon. River flooding must be checked through the responsible state flood service.
+Official warning counts affect state-level action wording only when the feed is at most eight hours old, the selected date is today in Berlin, and the warning interval is active now. District and sub-basin actions do not inherit state-wide counts because the warning areas have not been mapped to those units. Warning panels show all matching affected areas and validity intervals as state-wide background, alongside issue time and independent freshness status. Saved/invalid feeds never establish current warning conditions; missing entries never establish an all-clear. These counts never enter the custom 0-100 score. The feed is not a retrospective archive or a warning forecast for the full horizon. River flooding must be checked through the responsible state flood service.
 
 ## Current limitations
 

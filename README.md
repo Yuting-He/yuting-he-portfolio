@@ -9,7 +9,7 @@ Personal portfolio for environmental engineering, statistics, geospatial NatCat 
 
 - live DWD ICON forcing plus ICON-D2/EU/Global daily ensemble means and hourly member standard deviations
 - matched DWD station-temperature bias/MAE and RADOLAN rolling 24-hour precipitation checks
-- UFZ topsoil and total-soil SMI plus plant-available water
+- UFZ v2 14-day-mean topsoil and total-soil SMI plus daily plant-available water
 - DWD AMBAV crop-specific nFK using local BUEK1000 soil profiles, averaged from 10 cm layers to 30/60/90 cm
 - separately displayed official DWD heat and heavy/persistent-rain warning context
 - two retrospective and seven forecast dates
@@ -66,7 +66,11 @@ Refresh the live snapshot with internet access:
 npm run refresh-data
 ```
 
-The ingestion job queries forecast and observation sources in rate-limited batches, decodes HDF5 / NetCDF4 grids, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. GitHub Actions repeats this every six hours. A failed scheduled refresh skips deployment so the last successful Pages release stays online.
+The ingestion job queries forecast and observation sources in rate-limited batches, decodes HDF5 / NetCDF4 grids, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. UFZ v2 uses a geographic 0.015625-degree grid, with separate timestamps for 14-day-mean SMI and daily plant-available water. The source URLs and version are retained in the snapshot.
+
+GitHub Actions is scheduled every six hours. A failed refresh now fails the workflow for every trigger and preserves the previous Pages release. Before publication, `node scripts/check-live-freshness.mjs` verifies the actual build clock, today's Berlin forecast window and each required source's raw timestamp. Historical snapshot tests remain runnable offline and are not a live-publication check. Every attempt writes `artifacts/refresh-status.json`; the workflow summary and diagnostic artifact retain source ages and failures. GitHub may disable scheduled workflows after repository inactivity; re-enable the workflow in Actions if its state is `disabled_inactivity`, then run it manually and verify a successful Pages deployment.
+
+DWD warning context has its own eight-hour freshness limit. The interface labels stale or unverified feeds as saved context, shows their issue time and affected areas, and does not interpret a missing entry as an all-clear. Warnings are grouped by state; district and sub-basin views explicitly show state-wide background, without inheriting state warning counts into local action advice. State-level warning prompts only use alerts active now on today's Berlin date. Precise DWD-to-NUTS warning-area matching remains a future improvement.
 
 ## Spatial ETL
 
@@ -85,9 +89,11 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 - `heatwave-language.js` - deterministic plain-language translation and decision-safety wording
 - `heatwave-language-de.js`, `heatwave-i18n.js` - German decision wording and shared EN/DE interface localization
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
+- `heatwave-warnings.js` - independent warning freshness, state scope and English/German explanations
 - `assets/live/forecast.json` - last validated operational snapshot
 - `scripts/fetch-live-data.mjs` - coordinated deterministic and ensemble forecast ingestion
 - `scripts/grid-sources.mjs` - UFZ, DWD soil WCS, and RADOLAN HDF5 adapters
+- `scripts/check-live-freshness.mjs` - real-clock publication gate and refresh diagnostic summary
 - `scripts/dwd-stations.mjs` - DWD station discovery and temperature-observation adapter
 - `scripts/build_spatial_crosswalk.py` - reproducible exact-area spatial ETL
 - `tests/` - model, live-data, spatial, state, and page-contract checks
