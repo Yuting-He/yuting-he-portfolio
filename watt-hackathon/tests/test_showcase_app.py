@@ -68,3 +68,25 @@ def test_workspace_selection_survives_showcase_visit():
     assert not a.exception
     assert a.selectbox(key="app_workspace").value == "Official challenge · Bavaria"
     assert a.session_state["oc_state"] is state
+
+
+def test_route_showcase_opens_without_initializing_a_simulation():
+    a = app()
+    a.radio(key="app_view").set_value("Route showcase").run()
+    assert not a.exception
+    assert "tw_sim" not in a.session_state
+    assert not a.tabs
+    assert not a.selectbox
+
+
+def test_route_showcase_pauses_an_existing_stream():
+    a = app()
+    a.radio(key="app_view").set_value("Interactive dashboard").run()
+    simulation = a.session_state["tw_sim"]
+    a.session_state["tw_playing"] = True
+    minute = simulation.minute
+    a.radio(key="app_view").set_value("Route showcase").run()
+    assert not a.exception
+    assert not a.session_state["tw_playing"]
+    assert a.session_state["tw_sim"] is simulation
+    assert simulation.minute == minute

@@ -6,6 +6,7 @@ import streamlit.components.v1 as components
 
 
 SHOWCASE_DOCUMENT = Path(__file__).resolve().parents[1] / "dist" / "index.html"
+SCHEDULE_DOCUMENT = Path(__file__).resolve().parents[1] / "dist" / "schedule.html"
 
 # Keep exploration choices while their widgets are hidden. Button and chart state
 # must not be reassigned through Session State, so only input keys are detached.
@@ -41,3 +42,12 @@ def render_showcase():
         return
 
     components.html(SHOWCASE_DOCUMENT.read_text(encoding="utf-8"), height=980, scrolling=True)
+
+
+def render_schedule_showcase():
+    """Show the teammate's route using the same offline document as the website."""
+    if not SCHEDULE_DOCUMENT.is_file():
+        st.info("The route showcase has not been built yet. Build it, then reload this page.")
+        st.code("python web/build.py", language="bash")
+        return
+    components.html(SCHEDULE_DOCUMENT.read_text(encoding="utf-8"), height=1150, scrolling=True)

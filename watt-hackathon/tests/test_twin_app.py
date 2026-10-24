@@ -148,30 +148,69 @@ def test_dynamic_mission_revisions_assignments_findings_and_five_drone_explanati
     assert not a.exception
     assert west["status"]=="completed"
     assert west["finding"] and west["next_action"]
-    assert any("Same-window model anomaly" in c.value for c in a.caption)
+    assert west["posterior_before"] is None and west["posterior_after"] is None
+    assert any("No target telemetry" in c.value for c in a.caption)
 
 
 def test_selected_line_bn_evidence_historical_update_and_preview_isolation():
-    a=app()
-    button(a,"Load dynamic mission").click().run()
+    a=manual(app())
     button(a,"Jump to 55 min").click().run()
-    button(a,"Advance 5 min").click().run()
-    a.selectbox(key="tw_asset").select("LINE_058").run()
+    sim=a.session_state["tw_sim"]
+    asset=sim.drones[0].asset_id
+    sim.verify(asset,"clear")
+    view=sim.explain_asset(asset)
+    summaries=view["calculation"]["summaries"]
+    before_probability=summaries["telemetry_only"]["anomaly"]
+    after_probability=summaries["with_visual"]["anomaly"]
+    assert after_probability<before_probability
+    expected_before=f"{before_probability:.1%}"
+    expected_after=f"{after_probability:.1%}"
+    a.selectbox(key="tw_asset").select(asset).run()
     assert not a.exception
     assert not a.session_state["tw_follow"]
-    assert any(m.label=="After sensors" and m.value=="88.4%" for m in a.metric)
-    assert any(m.label=="After inspection" and m.value=="55.5%" for m in a.metric)
-    sim=a.session_state["tw_sim"]
-    before=(len(sim.audit),len(sim.inspection_history),sim.current("LINE_058")["anomaly"])
-    a.radio(key="tw_bn_preview_LINE_058").set_value("clear").run()
+    assert any(m.label=="After sensors" and m.value==expected_before for m in a.metric)
+    assert any(m.label=="After inspection" and m.value==expected_after for m in a.metric)
+    before=(len(sim.audit),len(sim.inspection_history),sim.current(asset)["anomaly"])
+    a.radio(key=f"tw_bn_preview_{asset}").set_value("supports").run()
     assert not a.exception
-    assert (len(sim.audit),len(sim.inspection_history),sim.current("LINE_058")["anomaly"])==before
+    assert (len(sim.audit),len(sim.inspection_history),sim.current(asset)["anomaly"])==before
     sim.advance_to(80)
     a.run()
     assert not a.exception
     assert any("previous inspection has expired" in w.value for w in a.warning)
-    record=next(r for r in sim.inspection_history if r["asset_id"]=="LINE_058" and r["minute"]==60)
+    record=next(r for r in sim.inspection_history if r["asset_id"]==asset and r["minute"]==55)
+    a.selectbox(key=f"tw_bn_scope_{asset}").select(record["id"]).run()
+    assert not a.exception
+    assert any("HISTORICAL INSPECTION" in i.value for i in a.info)
+    assert any(m.label=="After inspection" and m.value==expected_after for m in a.metric)
+
+
+def test_nearby_rgb_inspection_keeps_observer_position_and_target_unknown():
+    a=app()
+    button(a,"Load dynamic mission").click().run()
+    sim=a.session_state["tw_sim"]
+    sim.advance_to(49)
+    a.selectbox(key="tw_asset").select("LINE_058").run()
+    assert not a.exception
+    assert any("LINE_025 · viewing LINE_058" in m.value for m in a.markdown)
+    assert any("Stationary RGB view of LINE_058 from LINE_025" in c.value for c in a.caption)
+    assert any("No target telemetry" in c.value for c in a.caption)
+    assert any("Nearby RGB imagery does not supply" in i.value for i in a.info)
+    drone4=sim.drones[3]
+    drone5=sim.drones[4]
+    assert drone4.asset_id=="LINE_025" and drone4.status=="charging"
+    assert drone5.asset_id=="LINE_009" and drone5.flight_count==0
+    sim.advance_to(60)
+    a.run()
+    assert not a.exception
+    assert sim.current("LINE_058")["status"]=="Unknown"
+    assert not sim.explain_asset("LINE_058")["visual"]["used"]
+    assert any(m.label=="Mechanical anomaly" and m.value=="Unknown" for m in a.metric)
+    assert not any(m.label=="After sensors" for m in a.metric)
+    assert any(alert["asset_id"]=="LINE_058" and alert["category"]=="coverage" for alert in sim.human_alerts)
+    record=next(r for r in sim.inspection_history if r["asset_id"]=="LINE_058" and r["minute"]==51)
     a.selectbox(key="tw_bn_scope_LINE_058").select(record["id"]).run()
     assert not a.exception
     assert any("HISTORICAL INSPECTION" in i.value for i in a.info)
-    assert any(m.label=="After inspection" and m.value=="55.5%" for m in a.metric)
+    assert any(m.label=="Mechanical anomaly" and m.value=="Unknown" for m in a.metric)
+    assert not any(m.label=="After sensors" for m in a.metric)

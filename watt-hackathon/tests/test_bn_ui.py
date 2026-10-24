@@ -12,9 +12,12 @@ from gridscout.twin_engine import TwinSimulation
 
 
 def test_visual_preview_matches_bayes_and_preserves_actual_mission():
-    sim=TwinSimulation("dynamic",42,autonomous=True).advance_to(60)
-    view=sim.explain_asset("LINE_058")
+    sim=TwinSimulation("mechanical",42).advance_to(55)
+    asset=sim.drones[0].asset_id
+    sim.verify(asset,"supports")
+    view=sim.explain_asset(asset)
     calc=view["calculation"]
+    assert calc["available"] and calc["visual"]["used"]
     prior=calc["summaries"]["telemetry_only"]["anomaly"]
     before=deepcopy(sim.export())
     spec=inspection_spec(calc.get("visual",{}).get("spec"))

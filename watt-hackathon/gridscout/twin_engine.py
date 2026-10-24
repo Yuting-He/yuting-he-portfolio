@@ -16,7 +16,7 @@ from .synthetic_telemetry import generate_reading
 from .weather_context import weather_at
 from .asset_inference import infer_asset
 from .action_policy import recommend_actions
-from .autonomous_ops import AutonomousOperations
+from .autonomous_ops import AutonomousOperations, INSPECTION_MINUTES
 from .synthetic_inspection import generate_inspection
 from .inspection_model import inspection_spec
 from .operating_state import operating_context
@@ -32,6 +32,7 @@ DEMO_SPEED_KM_PER_MINUTE = DEMO_CRUISE_SPEED_MPS * .06
 DEMO_MAX_GUST_MPS = 18.0
 STALE_AFTER_MINUTES = 2
 VISUAL_TTL_MINUTES = 15
+NEARBY_IMAGERY_RADIUS_M = 25.0
 CHANNELS = ("temperature_c", "vibration_rms", "voltage_pu", "tilt_deg")
 
 
@@ -449,7 +450,8 @@ class TwinSimulation:
             "delta_pp": (after - before) * 100 if before is not None and after is not None else None,
             "previous_current_anomaly": previous_assessment.get("anomaly"),
             "telemetry_observation_id": (reading or {}).get("observation_id"),
-            "comparison_scope": "Historical same-window telemetry-only versus telemetry + this inspection",
+            "comparison_scope": ("Historical same-window telemetry-only versus telemetry + this inspection"
+                                 if available else "Independent imagery only; target telemetry unavailable and asset assessment remains Unknown"),
             "reading": deepcopy(reading) if available else None,
             "baseline": deepcopy(inputs.get("baseline")),
             "context": deepcopy(inputs.get("context")),
@@ -565,19 +567,84 @@ class TwinSimulation:
         The returned camera result replaces previous visual evidence rather than
         multiplying repeated or expired observations into a previous posterior.
         """
-        if not any(d.sensor_id == operation["sensor_id"] and d.asset_id == operation["asset_id"]
-                   and d.status != "flying" for d in self.drones):
-            raise ValueError("Autonomous inspection requires its assigned drone on site")
+        access = self.validate_stationary_inspection(operation)
+        started = operation.get("inspection_started_at")
+        if (operation.get("status") != "inspecting" or not operation.get("inspection_access")
+                or started is None or self.minute - started < INSPECTION_MINUTES):
+            raise ValueError("Inspection evidence requires four complete minutes of qualified stationary collection")
         previous_assessment = deepcopy(self.current(operation["asset_id"]))
         evidence = generate_inspection(operation["sensor_id"], operation["asset_id"],
                                        self.minute, operation["id"], scenario=self.scenario,
                                        seed=self.seed, anomaly_asset_id=self._scenario_asset)
+        evidence.update(observation_mode=access["mode"], observer_asset_id=access["observer_asset_id"],
+                        observer_position=list(self.position(operation["sensor_id"])),
+                        target_position=list(self.dataset.segments[operation["asset_id"]]["position"]),
+                        inspection_access=deepcopy(access),
+                        telemetry_scope="Only the drone's attached asset supplies contact telemetry; nearby imagery does not supply target telemetry")
         self.visual_evidence[operation["asset_id"]] = evidence
         self.audit.append({"type": "autonomous_inspection_received", "minute": self.minute,
                            **deepcopy(evidence)})
         self._refresh_assessments()
         self._record_inspection_comparison(operation["asset_id"], evidence, previous_assessment)
         return evidence
+
+    def stationary_inspection_access(self, drone, target_asset):
+        """Conservative synthetic camera reach, independent of flight eligibility.
+
+        Adjacent geometry within 25 m can be viewed without leaving the current
+        perch. Shared endpoints establish geometric adjacency only: electrical
+        connectivity, line of sight and real camera capability remain unvalidated.
+        Contact telemetry is never transferred between mapped assets.
+        """
+        if isinstance(drone, str):
+            drone = self._drone(drone)
+        if target_asset not in self.dataset.segments:
+            raise ValueError("Inspection target must be a mapped asset")
+        origin = self.dataset.segments[drone.asset_id]
+        target = self.dataset.segments[target_asset]
+        distance_m = haversine_km(origin["position"], target["position"]) * 1000
+        shared_endpoint = any(all(abs(a[i] - b[i]) <= 1e-9 for i in (0, 1))
+                              for a in (origin["coordinates"][0], origin["coordinates"][-1])
+                              for b in (target["coordinates"][0], target["coordinates"][-1]))
+        same_asset = drone.asset_id == target_asset
+        stationary = drone.status in {"perched", "charging"}
+        nearby = distance_m <= NEARBY_IMAGERY_RADIUS_M and shared_endpoint
+        eligible = stationary and (same_asset or nearby)
+        return {"eligible": eligible,
+                "mode": "on_site" if same_asset else "nearby_stationary" if nearby else "requires_flight",
+                "observer_asset_id": drone.asset_id, "target_asset_id": target_asset,
+                "origin_asset": drone.asset_id, "target_asset": target_asset,
+                "observer_position": list(origin["position"]), "target_position": list(target["position"]),
+                "distance_m": round(distance_m, 6), "radius_m": NEARBY_IMAGERY_RADIUS_M,
+                "shared_endpoint": shared_endpoint, "stationary": stationary,
+                "target_telemetry_available": (self._is_current(target_asset, self.latest.get(target_asset))
+                                               and self.current(target_asset)["status"] != "Unknown"),
+                "electrical_connectivity": "unknown; geometric adjacency does not establish electrical connectivity",
+                "reason": ("Stationary imagery at the attached asset; charging can continue." if same_asset else
+                           f"Stationary imagery from adjacent {drone.asset_id}, {distance_m:.1f} m away; shared endpoint and <=25 m camera-reach assumption. Charging and attached-asset telemetry continue."
+                           if eligible else "Stationary imagery requires the same asset or shared-endpoint geometry within 25 m; otherwise a constrained flight is required."),
+                "checked_at": self.minute, "synthetic": True}
+
+    def validate_stationary_inspection(self, operation):
+        """Recheck observer, geometry and exclusive camera use throughout a view."""
+        drone = self._drone(operation["sensor_id"])
+        access = self.stationary_inspection_access(drone, operation["asset_id"])
+        started_access = operation.get("inspection_access")
+        if not access["eligible"] or (started_access and (
+                access["observer_asset_id"] != started_access["observer_asset_id"]
+                or access["target_asset_id"] != started_access["target_asset_id"]
+                or access["mode"] != started_access["mode"]
+                or access["observer_position"] != started_access["observer_position"]
+                or access["target_position"] != started_access["target_position"])):
+            raise ValueError("Assigned drone left its qualified stationary inspection position or camera reach changed; evidence not collected")
+        if (operation.get("requires_target_telemetry") and access["mode"] != "on_site"
+                and not access["target_telemetry_available"]):
+            raise ValueError("Coverage restoration requires target-specific stationary telemetry; nearby imagery alone is insufficient")
+        busy = any(other is not operation and other["sensor_id"] == drone.sensor_id
+                   and other["status"] in {"flying", "inspecting"} for other in self.operations)
+        if busy:
+            raise ValueError("Assigned drone is committed to another flight or inspection; camera use is exclusive")
+        return access
 
     def advance_to(self, minute):
         if not isinstance(minute, int) or isinstance(minute, bool) or minute < self.minute:
@@ -779,6 +846,8 @@ class TwinSimulation:
                 "flight_gust_limit_mps_exclusive": DEMO_MAX_GUST_MPS,
                 "stale_after_minutes": STALE_AFTER_MINUTES,
                 "visual_evidence_ttl_minutes": VISUAL_TTL_MINUTES,
+                "nearby_imagery_radius_m": NEARBY_IMAGERY_RADIUS_M,
+                "nearby_imagery": "Synthetic stationary imagery only: midpoint distance <=25 m and a shared geometric endpoint; no electrical connectivity or contact telemetry transfer is inferred. Line of sight and real camera reach remain unvalidated.",
                 "charging": "Charging requires a listed site with explicitly stated energization and sufficient power.",
                 "baseline": "Healthy synthetic history; fault likelihoods and costs are illustrative, uncalibrated assumptions",
                 "load": "Load: unknown; represented through temperature uncertainty.",

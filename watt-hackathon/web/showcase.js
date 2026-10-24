@@ -4,15 +4,12 @@
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '—').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const fmt = (v, digits = 1) => typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : '—';
-  const pct = v => typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : 'Unknown';
+  const pct = (v, digits = 1) => typeof v === 'number' && Number.isFinite(v) ? `${(v * 100).toFixed(digits)}%` : 'Unknown';
   const pretty = value => esc(JSON.stringify(value, null, 2));
   const label = value => String(value ?? 'Unknown').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
   const clock = n => `${String(Math.floor(n / 60)).padStart(2, '0')}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let data, frames, chapters, boundaries, duration = 75, cursor = 0, playing = false, page = 'showcase', evidenceTab = 'operations', evidenceFrame, lastTick, renderedKey, activeNode = null, bindingOK = false;
-  const titleShort = ['Conditions', 'Received report', 'Choose a drone', 'Fly the route', 'Collect evidence', 'Update action'];
-  const titleMain = ['Limited coverage.<br>A changing environment.', 'A report is a reason<br>to investigate.', 'The closest drone<br>cannot always leave.', 'From a dispatch<br>to an inspection.', 'Let the evidence<br>challenge the model.', 'New evidence.<br>A clearer next step.'];
-  const statusNames = ['Coverage gap', 'Unverified lead', 'Drone 5 selected', 'Mission in progress', 'Stationary inspection', 'Human review open'];
+  let data, frames, chapters, boundaries, duration = 0, cursor = 0, playing = false, page = 'showcase', evidenceTab = 'operations', evidenceFrame, lastTick, renderedKey, activeNode = null, bindingOK = false;
   const channels = [['temperature_c', 'Conductor temperature', '°C'], ['vibration_rms', 'Vibration RMS', 'RMS'], ['tilt_deg', 'Relative tilt', '°'], ['voltage_pu', 'Energization proxy', 'p.u.']];
   const palette = {teal:'#68e0c4', amber:'#efbd75', red:'#ff8b91', blue:'#8ab9ec', grey:'#647b87'};
   const panel = (title, content, eyebrow = '', full = false) => `<section class="evidence-panel${full ? ' full' : ''}">${eyebrow ? `<div class="panel-eyebrow">${eyebrow}</div>` : ''}<h3>${title}</h3>${content}</section>`;
@@ -22,12 +19,16 @@
   const metric = (value, text, tone = '') => `<div class="metric"><strong class="${tone}">${value}</strong><span>${text}</span></div>`;
   const empty = message => `<div class="empty-state">${message}</div>`;
   const keyValues = obj => table(['Property', 'Frozen value'], Object.entries(obj || {}).map(([k,v]) => [esc(label(k)), esc(typeof v === 'object' ? JSON.stringify(v) : v)]));
-  const snapshotFor = minute => frames.find(f => f.minute === minute) || frames.filter(f => f.minute <= minute).at(-1) || frames[0];
+  const assetFor = frame => frame.asset_id || frame.operation?.asset_id || data.metadata.asset_id;
+  const snapshotFor = (minute, asset) => {
+    const matching = frames.filter(f => assetFor(f) === asset);
+    return matching.find(f => f.minute === minute) || matching.filter(f => f.minute <= minute).sort((a,b) => b.minute-a.minute)[0] || matching[0];
+  };
   function chapterIndex() { let i = boundaries.findIndex((start, j) => cursor >= start && cursor < (boundaries[j + 1] ?? duration + 1)); return i < 0 ? chapters.length - 1 : i; }
   function currentFrame() {
     const i = chapterIndex(), chapter = chapters[i], local = Math.min(1, (cursor - boundaries[i]) / chapter.duration_seconds);
     const minutes = chapter.frame_minutes?.length ? chapter.frame_minutes : [chapter.minute];
-    return snapshotFor(minutes[Math.min(minutes.length - 1, Math.floor(local * minutes.length))]);
+    return snapshotFor(minutes[Math.min(minutes.length - 1, Math.floor(local * minutes.length))], chapter.asset_id || data.metadata.asset_id);
   }
   function goChapter(index) { cursor = boundaries[Math.max(0, Math.min(chapters.length - 1, index))]; pause(); renderShowcase(true); }
   function pause() { playing = false; renderControls(); }
@@ -36,6 +37,16 @@
     if (page === 'showcase' && next === 'dashboard') evidenceFrame = currentFrame();
     if (next !== 'showcase') pause();
     page = next;
+    document.body.classList.toggle('schedule-open', next === 'schedule');
+    const schedule = $('schedule-frame');
+    if (next === 'schedule' && !schedule.dataset.loaded) {
+      const documentText = $('schedule-document').textContent.trim();
+      if (documentText === '__SCHEDULE_DOCUMENT__') schedule.src = 'schedule.html';
+      else schedule.srcdoc = JSON.parse(documentText);
+      schedule.dataset.loaded = 'true';
+    } else if (next !== 'schedule' && schedule.dataset.loaded) {
+      schedule.contentWindow?.postMessage({type:'gridscout:pause-route'}, '*');
+    }
     document.querySelectorAll('.page').forEach(el => { el.hidden = el.id !== `page-${next}`; });
     document.querySelectorAll('[data-page]').forEach(el => { const active = el.dataset.page === next; el.classList.toggle('active', active); active ? el.setAttribute('aria-current', 'page') : el.removeAttribute('aria-current'); });
     if (next === 'dashboard') { evidenceFrame ||= currentFrame(); renderEvidence(); }
@@ -55,40 +66,93 @@
   function renderShowcase(force = false) {
     if (!data) return;
     renderControls();
-    const i = chapterIndex(), chapter = chapters[i], frame = currentFrame(), key = `${i}-${frame.minute}`;
+    const i = chapterIndex(), chapter = chapters[i], frame = currentFrame(), asset = assetFor(frame), key = `${chapter.id}-${frame.snapshot_id}`;
     if (!force && renderedKey === key) return;
     renderedKey = key;
     document.querySelectorAll('[data-chapter]').forEach((btn, j) => {
       btn.classList.toggle('active', i === j); btn.classList.toggle('completed', i > j);
       if (i === j) btn.setAttribute('aria-current', 'step'); else btn.removeAttribute('aria-current');
     });
-    $('chapter-number').textContent = `${String(i + 1).padStart(2, '0')} / 06`;
-    $('stage-status').textContent = frame.narrative?.status || statusNames[i];
-    $('story-title').innerHTML = titleMain[i] || esc(chapter.title);
-    const useNarrative = [3,4,5].includes(i);
-    $('story-what').textContent = useNarrative && frame.narrative?.what ? frame.narrative.what : chapter.what;
+    $('chapter-number').textContent = `${String(i + 1).padStart(2, '0')} / ${String(chapters.length).padStart(2, '0')}`;
+    $('stage-status').textContent = frame.narrative?.status || label(chapter.kind || chapter.id);
+    $('story-title').innerHTML = esc(chapter.headline || chapter.title).replace(/\n/g, '<br>');
+    $('story-what').textContent = frame.narrative?.what || chapter.what;
     $('story-why').textContent = chapter.why;
-    $('story-next').textContent = useNarrative && frame.narrative?.next ? frame.narrative.next : chapter.next;
-    const calc = frame.explanation?.calculation || {}, sums = calc.summaries || {}, route = frame.route;
-    const inspectionUsed = Boolean(frame.explanation?.visual?.used);
-    const openHumanReview = (frame.human_alerts || []).some(a => ['open', 'acknowledged'].includes(a.status));
-    let content = '';
-    if (i === 0) content = `<div class="story-metrics">${metric(String(frame.fleet.length), 'mobile sensing drones')}${metric(String(data.geometry.length), 'mapped line segments')}${metric('Unknown', 'unobserved line status', 'amber')}</div>`;
-    if (i === 1) content = `<div class="story-metrics">${metric('LINE_058', 'received high-priority report', 'amber')}${metric('Unknown', 'no stationary measurement')}</div>`;
-    if (i === 2) { const selected = (frame.candidates || []).find(c => c.sensor_id === 'Drone 5'); content = `<div class="story-metrics">${metric('Drone 5', 'feasible dispatch', 'teal')}${metric(selected ? `${selected.flight_minutes} min` : '—', 'simulated flight time')}</div>`; }
-    if (i === 3 && route) content = `<div class="story-metrics">${metric(`${fmt(route.distance_km)} km`, 'simulated flight leg')}${metric(`${route.flight_speed_mps} m/s`, 'model speed')}${metric(`T+${route.arrival_at}`, frame.minute >= route.arrival_at ? 'arrived' : 'scheduled arrival', 'teal')}</div>`;
-    if (i >= 4 && inspectionUsed && sums.telemetry_only && sums.with_visual) {
-      const before = sums.telemetry_only.anomaly, after = sums.with_visual.anomaly;
-      content = `<div class="probability-compare">${metric(pct(before), 'sensors only')}<span class="arrow">→</span>${metric(pct(after), `+ ${esc(frame.explanation.visual.evidence?.result)} ${esc(String(frame.explanation.visual.evidence?.modality || '').toUpperCase())} view`, 'teal')}<span class="delta">${fmt((after-before)*100)} pp<br>same window</span></div>`;
-    } else if (i >= 4 && calc.available) content = `<div class="story-metrics">${metric(pct(sums.telemetry_only?.anomaly), 'model P(asset anomaly)', 'amber')}${metric(openHumanReview ? 'Open' : 'In progress', openHumanReview ? 'human field-review request' : 'stationary RGB inspection')}</div>`;
-    $('story-metric').innerHTML = content;
-    $('story-snapshot').textContent = `${frame.snapshot_id} · ${data.metadata.asset_id} · T+${frame.minute}`;
+    $('story-next').textContent = frame.narrative?.next || chapter.next;
+    $('story-metric').innerHTML = storyMetrics(frame, chapter);
+    $('story-snapshot').textContent = `${frame.snapshot_id} · ${asset} · T+${frame.minute}`;
     $('map-clock').textContent = `T+${frame.minute} min`;
-    $('map-location').textContent = i < 1 ? 'Post-storm inspection network' : 'LINE_058 · inspection mission';
-    $('map-context').innerHTML = i === 0 ? '<strong>Coverage is incomplete</strong><span class="context-divider">/</span><span>Unobserved lines remain Unknown</span>' : i === 1 ? '<strong>Observer lead received at T+46</strong><span class="context-divider">/</span><span>Not yet verified on site</span>' : route ? `<strong>${esc(route.origin_asset)} → ${esc(route.target_asset)}</strong><span class="context-divider">/</span><span>${frame.minute < route.arrival_at ? 'Time compressed · recorded 1-minute positions' : frame.minute < 60 ? 'Stationary evidence collection' : 'Inspection received · human review stays open'}</span>` : '';
-    renderMap(frame, i);
+    $('map-location').textContent = chapter.kind === 'coverage' ? 'Post-storm inspection network' : `${asset} · inspection mission`;
+    const op = frame.operation, access = op?.inspection_access, route = frame.route, latestReport = frame.inspection_requests?.at(-1);
+    $('map-context').innerHTML = chapter.kind === 'coverage' ? '<strong>Coverage is incomplete</strong><span class="context-divider">/</span><span>Unobserved lines remain Unknown</span>' : chapter.kind === 'report' ? `<strong>${esc(asset)} · report received${latestReport ? ` at T+${latestReport.received_at}` : ''}</strong><span class="context-divider">/</span><span>Unverified lead · seek target evidence</span>` : access?.mode === 'nearby_stationary' ? `<strong>${esc(op.sensor_id)} at ${esc(access.observer_asset_id)}</strong><span class="context-divider">/</span><span>Nearby RGB view · ${fmt(access.distance_m)} m · no takeoff</span>` : route ? `<strong>${esc(route.origin_asset)} → ${esc(route.target_asset)}</strong><span class="context-divider">/</span><span>${frame.minute < route.arrival_at ? 'Recorded simulated flight' : 'Stationary target measurements'}</span>` : `<strong>${esc(asset)}</strong><span class="context-divider">/</span><span>${esc(op?.sensor_id || 'Awaiting assignment')} · target-specific evidence</span>`;
+    renderMap(frame, chapter);
+  }
+  function storyMetrics(frame, chapter) {
+    const kind = chapter.kind || chapter.id, op = frame.operation, access = op?.inspection_access;
+    const ex = frame.explanation || {}, sums = ex.calculation?.summaries || {}, image = ex.visual?.evidence, route = frame.route;
+    const selected = (frame.candidates || []).find(c => c.sensor_id === op?.sensor_id);
+    const metrics = (...items) => `<div class="story-metrics">${items.join('')}</div>`;
+    if (kind === 'coverage' || kind === 'context') return metrics(metric(String(frame.fleet.length), 'mobile sensing drones'),metric(String(data.geometry.length), 'mapped line segments'),metric('Unknown', 'unobserved line status', 'amber'));
+    if (kind === 'report') return metrics(metric(esc(assetFor(frame)), 'received observer report', 'amber'),metric(esc(ex.assessment?.status || 'Unknown'), 'current target assessment'));
+    if (kind === 'selection') return metrics(metric(esc(op?.sensor_id || 'Pending'), selected?.observation_mode === 'nearby_stationary' ? 'nearby stationary view' : 'feasible assignment', 'teal'),metric(selected ? `${selected.flight_minutes} min` : '—', 'additional flight time'), selected?.observation_mode === 'nearby_stationary' ? metric(`${fmt(access?.distance_m ?? selected.observation_distance_m)} m`, 'to the adjacent line') : route ? metric(`T+${route.arrival_at}`, 'scheduled arrival') : metric(selected ? `${selected.flight_speed_mps} m/s` : '—', 'planned flight speed'));
+    if (kind === 'flight' && route) return metrics(metric(`${fmt(route.distance_km)} km`, 'simulated flight leg'),metric(`${route.flight_speed_mps} m/s`, 'model cruise speed'),metric(`T+${route.arrival_at}`, frame.minute >= route.arrival_at ? 'arrived' : 'scheduled arrival', 'teal'));
+    if (kind === 'inspection' && op?.status === 'inspecting') {
+      const observer = frame.fleet.find(d=>d.sensor_id === op.sensor_id);
+      return metrics(metric(access?.mode === 'nearby_stationary' ? '0' : esc(op.sensor_id), access?.mode === 'nearby_stationary' ? 'extra flights' : 'stationary observer', 'teal'),metric(`${Math.max(0, (op.inspection_due_at || frame.minute)-frame.minute)} min`, 'until image received'),metric(esc(label(observer?.status)), `${esc(op.sensor_id)} at ${esc(observer?.asset_id)}`));
+    }
+    if (kind === 'telemetry') return metrics(metric(ex.reading ? `${channels.filter(([key]) => Number.isFinite(ex.reading[key])).length} channels` : 'Unknown', 'stationary target telemetry', ex.reading ? 'teal' : 'amber'),metric(pct(sums.telemetry_only?.anomaly,3), 'sensors-only P(anomaly)'),metric(op?.inspection_due_at ? `T+${op.inspection_due_at}` : 'Pending', 'image result due'));
+    if (ex.visual?.used && sums.telemetry_only && sums.with_visual) {
+      const before = sums.telemetry_only.anomaly, after = sums.with_visual.anomaly;
+      if (chapter.id === 'bn_update' && sums.prior) {
+        const action = frame.recommendations?.find(r=>r.recommended) || frame.recommendations?.[0];
+        return `<div class="probability-compare three-stage">${metric(pct(sums.prior.anomaly,3), 'window prior')}<span class="arrow">→</span>${metric(pct(before,3), 'after sensors')}<span class="arrow">→</span>${metric(pct(after,3), `+ ${esc(String(image?.modality || 'RGB').toUpperCase())} image`, 'teal')}<span class="same-window">T+${frame.minute} · same window · P(asset anomaly)</span></div><div class="inference-action"><span>Current recommendation</span><strong>${esc(action?.label || label(action?.action))}</strong></div>`;
+      }
+      return `<div class="probability-compare">${metric(pct(before,3), 'sensors only')}<span class="arrow">→</span>${metric(pct(after,3), `+ ${esc(image?.result)} ${esc(String(image?.modality || '').toUpperCase())} view`, 'teal')}<span class="delta">${fmt((after-before)*100,2)} pp<br>same window</span></div>`;
+    }
+    if (ex.calculation?.available) return metrics(metric(pct(sums.telemetry_only?.anomaly), 'model P(asset anomaly)'),metric(esc(ex.assessment?.status), 'current target assessment', 'teal'));
+    const openReview = (frame.human_alerts || []).some(a=>['open','acknowledged'].includes(a.status));
+    return metrics(metric(image ? esc(label(image.result)) : 'Pending', 'target RGB image', 'teal'),metric('Unknown', 'target telemetry unavailable', 'amber'),metric(openReview ? 'Open' : 'Pending', 'coverage review'));
+  }
+  // Only the badges move: their leaders always end at the recorded coordinates.
+  // A stable order and candidate grid keep nearby or coincident drones legible.
+  function layoutMapLabels(markers, {bounds, obstacles = [], gap = 8} = {}) {
+    const area = bounds || {x:58, y:91, width:752, height:346};
+    const overlaps = (a, b, padding = gap) => a.x < b.x + b.width + padding && a.x + a.width + padding > b.x && a.y < b.y + b.height + padding && a.y + a.height + padding > b.y;
+    const anchorBoxes = markers.map(m => ({x:m.x - (m.radius || 8), y:m.y - (m.radius || 8), width:(m.radius || 8)*2, height:(m.radius || 8)*2}));
+    const placed = [], ordered = [...markers].sort((a,b) => (a.priority || 0) - (b.priority || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    for (const marker of ordered) {
+      const width = marker.width || 44, height = marker.height || 24, space = marker.offset || 13;
+      const preferred = marker.preferBelow ? {x:marker.x + space, y:marker.y + space} : {x:marker.x - width/2, y:marker.y - height - space};
+      const candidates = [], seen = new Set();
+      const add = (x, y) => {
+        x = Math.max(area.x, Math.min(area.x + area.width - width, x));
+        y = Math.max(area.y, Math.min(area.y + area.height - height, y));
+        const key = `${x.toFixed(2)},${y.toFixed(2)}`;
+        if (!seen.has(key)) { seen.add(key); candidates.push({x,y,width,height}); }
+      };
+      add(preferred.x, preferred.y);
+      for (let ring = 0; ring <= markers.length; ring++) {
+        for (let row = -ring; row <= ring; row++) for (let col = -ring; col <= ring; col++) {
+          if (ring && Math.max(Math.abs(row), Math.abs(col)) !== ring) continue;
+          add(preferred.x + col*(width + gap), preferred.y + row*(height + gap));
+        }
+      }
+      // The full map grid is a fallback for dense groups beside the edge.
+      for (let y = area.y; y <= area.y + area.height - height; y += height + gap) for (let x = area.x; x <= area.x + area.width - width; x += width + gap) add(x,y);
+      const blocked = [...obstacles, ...anchorBoxes, ...placed];
+      const score = box => {
+        const collision = blocked.reduce((n,b) => n + (overlaps(box,b) ? 1 : 0), 0);
+        const dx = box.x - preferred.x, dy = box.y - preferred.y;
+        return collision*1e9 + dx*dx + dy*dy;
+      };
+      candidates.sort((a,b) => score(a) - score(b) || a.y - b.y || a.x - b.x);
+      const box = candidates[0];
+      placed.push({...marker, ...box, anchorX:marker.x, anchorY:marker.y, leaderX:Math.max(box.x,Math.min(box.x + width,marker.x)), leaderY:Math.max(box.y,Math.min(box.y + height,marker.y))});
+    }
+    return placed;
   }
   function renderMap(frame, chapter) {
+    const asset = assetFor(frame), showTarget = !['coverage','context'].includes(chapter.kind || chapter.id), showOperation = showTarget && chapter.kind !== 'report';
     const all = data.geometry.flatMap(g => g.coordinates), west = Math.min(...all.map(p => p[0])), east = Math.max(...all.map(p => p[0])), south = Math.min(...all.map(p => p[1])), north = Math.max(...all.map(p => p[1]));
     const cosLat = Math.cos((north + south) / 2 * Math.PI / 180), scale = Math.min(690 / ((east-west)*cosLat), 350 / (north-south));
     const project = p => [425 + (p[0]-(east+west)/2)*cosLat*scale, 278 - (p[1]-(north+south)/2)*scale];
@@ -98,60 +162,85 @@
     for (const g of data.geometry) {
       const state = frame.map_states?.[g.asset_id], unknown = !state || /unknown|stale/i.test(state.status || ''), risk = state?.anomaly;
       const color = unknown ? palette.grey : risk > .65 ? palette.red : risk > .2 ? palette.amber : '#6dbaad';
-      const target = g.asset_id === data.metadata.asset_id && chapter >= 1;
+      const target = g.asset_id === asset && showTarget;
       svg += `<path d="${path(g.coordinates)}" fill="none" stroke="${target ? palette.amber : color}" stroke-width="${target ? 4 : 1.7}" stroke-linecap="round" opacity="${target ? 1 : .62}"${unknown && !target ? ' stroke-dasharray="2 3"' : ''}><title>${esc(g.asset_id)}: ${esc(unknown ? 'Unknown · no current usable observation' : `${state.status}; model anomaly ${pct(risk)}`)}</title></path>`;
     }
-    const targetGeometry = data.geometry.find(g => g.asset_id === data.metadata.asset_id), t = project(targetGeometry.position);
-    if (chapter >= 1) svg += `<circle cx="${t[0]}" cy="${t[1]}" r="48" fill="url(#target-glow)"/><circle cx="${t[0]}" cy="${t[1]}" r="15" fill="none" stroke="${palette.amber}" stroke-opacity=".55" stroke-dasharray="3 4"/><circle cx="${t[0]}" cy="${t[1]}" r="4" fill="${palette.amber}"/><path d="M${t[0]+12},${t[1]+10} l20,21 h79" fill="none" stroke="#a18556"/><rect x="${t[0]+29}" y="${t[1]+25}" width="96" height="23" rx="3" fill="#292a22" stroke="#6c5d3e"/><text x="${t[0]+39}" y="${t[1]+40}" fill="#f1cf96" font-size="11" letter-spacing="1">LINE_058</text>`;
+    const targetGeometry = data.geometry.find(g => g.asset_id === asset), t = project(targetGeometry.position);
+    const selectedId = frame.operation?.sensor_id || chapter.focus_sensor_id, access = frame.operation?.inspection_access;
+    const nearbyView = frame.operation?.observation_mode === 'nearby_stationary';
+    const mapWidth = $('mission-map').getBoundingClientRect().width || 850;
+    const badgeScale = Math.max(1, Math.min(2.4, 850/mapWidth)), labelGap = 7*badgeScale;
+    const obstacles = [], labelMarkers = [];
+    if (showTarget) {
+      svg += `<circle cx="${t[0]}" cy="${t[1]}" r="48" fill="url(#target-glow)"/><circle cx="${t[0]}" cy="${t[1]}" r="15" fill="none" stroke="${palette.amber}" stroke-opacity=".55" stroke-dasharray="3 4"/><circle cx="${t[0]}" cy="${t[1]}" r="4" fill="${palette.amber}"/>`;
+      labelMarkers.push({id:'target', x:t[0], y:t[1], width:(nearbyView && showOperation ? 145 : 96)*badgeScale, height:(nearbyView && showOperation ? 40 : 24)*badgeScale, radius:15, offset:22*badgeScale, preferBelow:true, priority:0, target:true});
+    }
     const route = frame.route;
-    if (route && chapter >= 2) {
+    if (route && showOperation) {
       const start = project(route.coordinates[0]), end = project(route.coordinates.at(-1));
-      const drone = frame.fleet.find(d => d.sensor_id === 'Drone 5');
+      const drone = frame.fleet.find(d => d.sensor_id === selectedId);
       svg += `<path d="${path(route.coordinates)}" fill="none" stroke="${palette.teal}" stroke-width="2" stroke-dasharray="7 6" opacity=".65"/>`;
       if (drone) svg += `<path d="${path([route.coordinates[0], drone.position])}" fill="none" stroke="${palette.teal}" stroke-width="3.5"/><path d="${path([route.coordinates[0], drone.position])}" fill="none" stroke="${palette.teal}" stroke-width="7" opacity=".2" filter="url(#soft-glow)"/>`;
-      svg += `<circle cx="${start[0]}" cy="${start[1]}" r="5" fill="#0c2229" stroke="#68e0c4"/><text x="${start[0]+12}" y="${start[1]-15}" fill="#a8d5cc" font-size="10">LINE_009 · departure</text>`;
+      const departure = {x:Math.min(660,Math.max(58,start[0]+12)), y:Math.max(91,start[1]-27), width:150, height:18};
+      svg += `<circle cx="${start[0]}" cy="${start[1]}" r="5" fill="#0c2229" stroke="#68e0c4"/><text x="${departure.x}" y="${departure.y+12}" fill="#a8d5cc" font-size="10">${esc(route.origin_asset)} · departure</text>`;
+      obstacles.push(departure);
       const mx = (start[0]+end[0])/2, my = (start[1]+end[1])/2;
       svg += `<rect x="${mx-39}" y="${my-12}" width="78" height="23" rx="4" fill="#142e30" stroke="#3b665e"/><text x="${mx}" y="${my+3}" fill="#a9e6d6" font-size="10" text-anchor="middle">${fmt(route.distance_km)} km ↘</text>`;
+      obstacles.push({x:mx-39,y:my-12,width:78,height:23});
     }
     for (const d of frame.fleet) {
-      const p = project(d.position), selected = d.sensor_id === 'Drone 5' && chapter >= 2;
-      svg += `<g><title>${esc(d.sensor_id)}: ${esc(d.status)} · ${esc(d.asset_id)}</title>${selected ? `<circle cx="${p[0]}" cy="${p[1]}" r="17" fill="#68e0c4" opacity=".09"/><circle cx="${p[0]}" cy="${p[1]}" r="11" fill="none" stroke="#68e0c4" opacity=".4"/>` : ''}<path d="M${p[0]},${p[1]-6} l6,6 -6,6 -6,-6 Z" fill="${selected ? palette.teal : '#c7d6df'}" stroke="#10212b" stroke-width="2"/><rect x="${p[0]-12}" y="${p[1]-29}" width="26" height="17" rx="3" fill="${selected ? '#244840' : '#172b38'}" stroke="${selected ? '#4b8b75' : '#3f5663'}"/><text x="${p[0]+1}" y="${p[1]-17}" text-anchor="middle" font-size="9" fill="${selected ? '#a9f1d8' : '#c5d9e1'}">${esc(d.sensor_id.replace('Drone ', 'D'))}</text></g>`;
+      const p = project(d.position), selected = d.sensor_id === selectedId && showOperation;
+      labelMarkers.push({id:d.sensor_id, x:p[0], y:p[1], width:46*badgeScale, height:25*badgeScale, offset:13*badgeScale, radius:8, priority:selected ? 1 : 2, drone:d, selected});
+    }
+    const labels = layoutMapLabels(labelMarkers, {obstacles, gap:labelGap});
+    // Paint every leader before the badges so no later line crosses a label.
+    for (const mark of labels) svg += `<path data-map-leader="${esc(mark.id)}" d="M${mark.anchorX},${mark.anchorY} L${mark.leaderX},${mark.leaderY}" fill="none" stroke="${mark.target ? '#a18556' : mark.selected ? '#68e0c4' : '#7894a3'}" stroke-width="${badgeScale}" opacity=".85"/>`;
+    for (const mark of labels) {
+      if (mark.target) {
+        svg += `<g data-map-label="target" data-map-asset="${esc(asset)}"><rect x="${mark.x}" y="${mark.y}" width="${mark.width}" height="${mark.height}" rx="${3*badgeScale}" fill="#292a22" stroke="#6c5d3e"/><text x="${mark.x+10*badgeScale}" y="${mark.y+16*badgeScale}" fill="#f1cf96" font-size="${11*badgeScale}" letter-spacing="1">${esc(asset)}</text>${nearbyView && showOperation ? `<text x="${mark.x+10*badgeScale}" y="${mark.y+31*badgeScale}" fill="#cfb98f" font-size="${10*badgeScale}">Stationary view · ${fmt(access?.distance_m,0)} m</text>` : ''}</g>`;
+        continue;
+      }
+      const {drone, selected} = mark, anchor = project(drone.position), cx = mark.x + 11*badgeScale, cy = mark.y + mark.height/2;
+      svg += `<g data-map-drone="${esc(drone.sensor_id)}"><title>${esc(drone.sensor_id)}: ${esc(drone.status)} · ${esc(drone.asset_id)}. Leader ends at its recorded position.</title>${selected ? `<circle cx="${anchor[0]}" cy="${anchor[1]}" r="17" fill="#68e0c4" opacity=".09"/><circle cx="${anchor[0]}" cy="${anchor[1]}" r="11" fill="none" stroke="#68e0c4" opacity=".6"/>` : ''}<circle data-map-anchor="${esc(drone.sensor_id)}" cx="${anchor[0]}" cy="${anchor[1]}" r="3" fill="${selected ? palette.teal : '#c7d6df'}" stroke="#10212b" stroke-width="1.5"/><g data-map-label="${esc(drone.sensor_id)}"><rect x="${mark.x}" y="${mark.y}" width="${mark.width}" height="${mark.height}" rx="${4*badgeScale}" fill="${selected ? '#244840' : '#172b38'}" stroke="${selected ? '#68e0c4' : '#7894a3'}" stroke-width="${badgeScale}"/><path d="M${cx},${cy-5*badgeScale} l${5*badgeScale},${5*badgeScale} ${-5*badgeScale},${5*badgeScale} ${-5*badgeScale},${-5*badgeScale} Z" fill="${selected ? palette.teal : '#c7d6df'}"/><text x="${mark.x+30*badgeScale}" y="${cy+4*badgeScale}" text-anchor="middle" font-size="${12*badgeScale}" fill="${selected ? '#a9f1d8' : '#d6e6ec'}">${esc(drone.sensor_id.replace('Drone ', 'D'))}</text></g></g>`;
     }
     const km = 5, linePx = km / 111.2 * scale;
     svg += `<g transform="translate(730 458)"><path d="M0,-4 V0 H${linePx} V-4" fill="none" stroke="#7897a6"/><text x="${linePx/2}" y="14" text-anchor="middle" fill="#7897a6" font-size="8">5 km</text></g><g transform="translate(797 91)"><path d="M0 23 V0 l-4 7 M0 0 l4 7" fill="none" stroke="#839eaa"/><text x="0" y="-7" text-anchor="middle" fill="#839eaa" font-size="9">N</text></g>`;
-    $('mission-map').innerHTML = `<title id="map-title">${esc(chapters[chapter].title)} · T+${frame.minute}</title><desc id="map-description">Official challenge line geometry. Grey is Unknown. ${chapter >= 2 ? 'Cyan shows Drone 5’s simulated point-to-point route from LINE_009 to LINE_058.' : 'Five drones cover a subset of lines.'}</desc>${svg}`;
+    const missionDescription = showOperation && selectedId ? nearbyView ? `${selectedId} observes ${asset} from its nearby stationary position; no flight is required.` : route ? `Cyan shows ${selectedId}’s simulated point-to-point route from ${route.origin_asset} to ${route.target_asset}.` : `${selectedId} is assigned to the inspection of ${asset}.` : 'Five drones cover a subset of lines.';
+    $('mission-map').innerHTML = `<title id="map-title">${esc(chapter.title)} · ${esc(asset)} · T+${frame.minute}</title><desc id="map-description">Official challenge line geometry. Grey is Unknown. ${esc(missionDescription)} Drone badges avoid each other; leaders show recorded positions.</desc>${svg}`;
   }
   function probabilityPanel(explanation) {
     const calc = explanation?.calculation || {}, s = calc.summaries || {}, used = explanation?.visual?.used;
-    if (!calc.available) return empty('Unknown: no fresh, usable stationary telemetry at this step. No asset probability is asserted.');
+    if (!calc.available) return empty(explanation?.visual?.evidence ? `RGB result: ${esc(label(explanation.visual.evidence.result))}. Target telemetry is missing; the image is recorded separately and no asset probability is asserted.` : 'Unknown: no fresh, usable stationary telemetry at this step. No asset probability is asserted.');
     const stages = [['Window prior', s.prior?.anomaly], ['After sensors', s.telemetry_only?.anomaly], ...(used ? [['After inspection', s.with_visual?.anomaly]] : [])];
-    return `<div class="comparison-bars">${stages.map(([name,p]) => `<div class="comparison-row"><span>${name}</span><div class="bar-track"><div class="bar-fill" style="width:${Number(p||0)*100}%"></div></div><span class="probability-value">${pct(p)}</span></div>`).join('')}</div><p class="tiny-note">${used ? 'One frozen telemetry window, one baseline and one prior. Only the eligible inspection factor changes.' : 'Inspection results have not been received or are not eligible at this step.'} These are model outputs under synthetic assumptions.</p>`;
+    return `<div class="comparison-bars">${stages.map(([name,p]) => `<div class="comparison-row"><span>${name}</span><div class="bar-track"><div class="bar-fill" style="width:${Number(p||0)*100}%"></div></div><span class="probability-value">${pct(p,3)}</span></div>`).join('')}</div><p class="tiny-note">${used ? 'One frozen telemetry window, one baseline and one prior. Only the eligible inspection factor changes.' : 'Inspection results have not been received or are not eligible at this step.'} These are model outputs under synthetic assumptions.</p>`;
   }
   function renderEvidence() {
-    const f = evidenceFrame, ex = f.explanation || {}, op = f.operation;
-    $('dashboard-context').textContent = `${data.metadata.asset_id} · T+${f.minute} simulated minutes · historical, received-evidence snapshot. Replay stays paused while you inspect this record.`;
-    $('evidence-binding').textContent = `${f.snapshot_id} · ${op?.id || op?.operation_id || 'no assigned operation yet'}`;
+    const f = evidenceFrame, ex = f.explanation || {}, op = f.operation, asset = assetFor(f);
+    const frameChapter = chapters.find(c => (c.asset_id || data.metadata.asset_id) === asset && (c.frame_minutes || [c.minute]).includes(f.minute));
+    $('dashboard-context').textContent = `${asset} · T+${f.minute} simulated minutes · historical, received-evidence snapshot. Replay stays paused while you inspect this record.`;
+    $('evidence-binding').textContent = `${asset} · ${f.snapshot_id} · ${op?.id || op?.operation_id || 'no assigned operation yet'}`;
     $('snapshot-select').value = f.snapshot_id;
     document.querySelectorAll('[data-evidence]').forEach(b => { b.classList.toggle('active', b.dataset.evidence === evidenceTab); b.setAttribute('aria-pressed', String(b.dataset.evidence === evidenceTab)); });
     let html = '';
     if (evidenceTab === 'operations') {
       html = '<div class="evidence-grid">';
-      html += panel('What is known at this step', `<div class="notice teal">${esc(f.narrative?.what || chapters.find(c => c.minute === f.minute)?.what || 'Frozen mission state.')}</div><div class="inline-metrics">${metric(esc(ex.assessment?.status || 'Unknown'), 'current assessment')}${metric(pct(ex.assessment?.status === 'Unknown' ? null : ex.assessment?.anomaly), 'model P(asset anomaly)')}</div>${probabilityPanel(ex)}${details('Full operation and dispatch scoring', op)}`, 'ASSET / LINE_058');
+      html += panel('What is known at this step', `<div class="notice teal">${esc(f.narrative?.what || frameChapter?.what || 'Frozen mission state.')}</div><div class="inline-metrics">${metric(esc(ex.assessment?.status || 'Unknown'), 'current assessment')}${metric(pct(ex.assessment?.status === 'Unknown' ? null : ex.assessment?.anomaly,3), 'model P(asset anomaly)')}</div>${probabilityPanel(ex)}${details('Full operation and dispatch scoring', op)}`, `ASSET / ${esc(asset)}`);
+      if (op?.observation_mode === 'nearby_stationary') html += panel('Reuse the nearby view', `<div class="notice teal">${esc(op.sensor_id)} stays at ${esc(op.inspection_access?.observer_asset_id)} and inspects ${esc(f.asset_id)} from ${fmt(op.inspection_access?.distance_m)} metres away. Recharge continues; no additional flight is assigned.</div><p class="panel-copy">The assumed viewing radius is ${fmt(op.inspection_access?.radius_m, 0)} metres and the mapped lines share an endpoint. A usable view is assumed; line of sight is not validated. The target receives its own image record, while contact telemetry stays with the line where it was measured.</p>${details('Stationary inspection access and observation location', op.inspection_access)}`, 'NEARBY RGB / ASSET-SPECIFIC EVIDENCE');
       const alerts = (f.human_alerts || []).filter(a => ['open', 'acknowledged'].includes(a.status));
       html += panel('Actions and human handoff', `${alerts.length ? `<div class="notice danger">${alerts.length} human field-review request${alerts.length > 1 ? 's' : ''} recorded. A clear image does not resolve an open request.</div>${details('Human review records — exact status and timestamps', alerts, true)}` : '<p class="panel-copy">No unresolved human field-review request for this asset is recorded at this snapshot.</p>'}${(f.recommendations || []).length ? table(['Current recommendation', 'Expected loss', 'Status'], f.recommendations.map(r => [esc(r.label || label(r.action)), fmt(r.expected_loss, 2), r.recommended ? tag('recommended', 'teal') : tag('alternative')])) : empty('No asset action can be inferred without current evidence.')}<p class="tiny-note">Relative loss units and action assumptions are synthetic. Recommendations are distinct from completed actions.</p>`, 'RECOMMENDATION ≠ EXECUTION');
       html += panel('Five-drone fleet', table(['Drone', 'At / origin', 'State', 'Target', 'Arrival / ready'], f.fleet.map(d => [esc(d.sensor_id), esc(d.asset_id), esc(d.status), esc(d.target_asset || '—'), d.status === 'flying' ? `T+${d.arrival_at}` : d.charge_ready_at ? `T+${d.charge_ready_at}` : 'Ready'])), 'FROZEN POSITIONS');
       const candidates = f.candidates || [];
       html += panel('Why this drone?', candidates.length ? table(['Candidate', 'Flight', 'Eligible', 'Reason'], candidates.map(c => [esc(c.sensor_id), `${c.flight_minutes} min`, tag(c.eligible ? 'yes' : 'no', c.eligible ? 'teal' : 'amber'), esc(c.reason)]), candidates.findIndex(c => c.sensor_id === op?.sensor_id)) + '<p class="tiny-note">Candidate comparison was frozen at dispatch. It is not rescored with later inspection evidence.</p>' : empty('No dispatch comparison has been made for this asset at this step.'), 'DISPATCH CONSTRAINTS');
-      html += panel('Received observer reports', (f.inspection_requests || []).length ? (f.inspection_requests || []).map(r => `<div class="audit-item"><span class="audit-time">T+${r.received_at}</span><div><strong>${esc(r.source)} · ${esc(r.priority)}</strong><p>${esc(r.reason)}</p></div></div>`).join('') + details('Report lifecycle data', f.inspection_requests) : empty('No report for LINE_058 has arrived yet.'), 'PUBLICLY RECEIVED INPUT', true);
+      html += panel('Received observer reports', (f.inspection_requests || []).length ? (f.inspection_requests || []).map(r => `<div class="audit-item"><span class="audit-time">T+${r.received_at}</span><div><strong>${esc(r.source)} · ${esc(r.priority)}</strong><p>${esc(r.reason)}</p></div></div>`).join('') + details('Report lifecycle data', f.inspection_requests) : empty(`No report for ${esc(asset)} has arrived yet.`), `PUBLICLY RECEIVED INPUT / ${esc(asset)}`, true);
       html += '</div>';
     }
     if (evidenceTab === 'baseline') {
       const rows = channels.map(([key,name,unit]) => { const b = ex.baseline?.[key], ev = ex.assessment?.evidence?.find(e => e.channel === key), v = ex.reading?.[key]; return [esc(name), `${fmt(v,3)} ${unit}`, b ? `${fmt(b.mean,3)} ${unit}` : 'Unknown', b ? `${fmt(b.low,3)} – ${fmt(b.high,3)}` : 'Unknown', fmt(ev?.z,2)]; });
-      html = `<div class="evidence-grid">${panel('Observed versus expected', ex.reading ? table(['Channel', 'Observed', 'Expected', 'Healthy reference range', 'Residual z'], rows) : empty('No fresh stationary reading has arrived for this line. Unknown is preserved.'), 'WEATHER-CONDITIONED HEALTHY BASELINE', true)}${panel('What changed the estimate?', probabilityPanel(ex) + details('Frozen reading, observation identity and timing', ex.reading) + details('Baseline means, scales and reference ranges', ex.baseline), 'SAME-WINDOW COMPARISON')}${panel('Inspection provenance', `${ex.visual?.used ? `<div class="inspection-result"><strong>${esc(String(ex.visual.evidence?.modality || 'inspection').toUpperCase())} result: ${esc(ex.visual.evidence?.result)}</strong>${ex.visual.evidence?.result === 'clear' ? 'No corresponding visible cue was found. Thermal-only defects are not excluded.' : 'Interpret this inspection within its recorded modality, quality and coverage.'}</div>` : empty('No eligible inspection factor is used at this step.')}<p class="panel-copy">Inspection freshness, modality, visibility and quality control whether the evidence can enter the model.</p>${details('Eligibility and raw inspection evidence', ex.visual, true)}${details('Historical frozen inspection comparisons', ex.inspection_history)}`, 'CURRENT ELIGIBILITY / ORIGINAL SNAPSHOTS')}${panel('How the baseline is used', '<ul class="detail-list"><li><strong>Weather changes normal behavior</strong>Ambient temperature, wind, solar exposure and uncertain load condition healthy expectations.</li><li><strong>Reference ranges describe healthy variation</strong>They are not confidence intervals on the probability of a fault.</li><li><strong>Vibration and tilt are modeled together</strong>Their correlation is retained instead of counting the same mechanical evidence twice.</li><li><strong>Flight samples are excluded</strong>Only fresh, stationary, quality-eligible measurements can diagnose this asset.</li></ul>' + details('Conditioning context', ex.context) + details('Assessment, missing inputs and alternative explanations', ex.assessment) + details('Freshness rules', ex.freshness), `${data.metadata.baseline_training_count || 3600} HEALTHY SYNTHETIC FIT RECORDS`)}${panel('Across observation windows', historyChart(ex.history) + '<p class="tiny-note">Each window is recomputed. Adjacent posteriors are not multiplied, because correlated windows would create excessive confidence.</p>' + details('All available assessment windows', ex.history), 'HISTORICAL WINDOWS / NOT A RECURSIVE DBN')}</div>`;
+      html = `<div class="evidence-grid">${panel('Observed versus expected', ex.reading ? table(['Channel', 'Observed', 'Expected', 'Healthy reference range', 'Residual z'], rows) : empty('No fresh stationary reading has arrived for this line. Unknown is preserved.'), 'WEATHER-CONDITIONED HEALTHY BASELINE', true)}${panel('What changed the estimate?', probabilityPanel(ex) + details('Frozen reading, observation identity and timing', ex.reading) + details('Baseline means, scales and reference ranges', ex.baseline), 'SAME-WINDOW COMPARISON')}${panel('Inspection provenance', `${ex.visual?.evidence ? `<div class="inspection-result"><strong>${esc(String(ex.visual.evidence?.modality || 'inspection').toUpperCase())} result: ${esc(ex.visual.evidence?.result)}</strong>${ex.visual.evidence?.result === 'clear' ? 'No corresponding visible cue was found. Thermal-only defects are not excluded.' : 'Interpret this inspection within its recorded modality, quality and coverage.'}</div>` : empty('No eligible inspection factor is used at this step.')}<p class="panel-copy">${ex.visual?.evidence && !ex.visual?.used ? 'Image received and recorded separately. No target telemetry is available, so this image does not enter a sensor posterior. ' : ''}Inspection freshness, modality, visibility and quality control whether the evidence can enter the model.</p>${details('Eligibility and raw inspection evidence', ex.visual, true)}${details('Historical frozen inspection comparisons', ex.inspection_history)}`, 'CURRENT ELIGIBILITY / ORIGINAL SNAPSHOTS')}${panel('How the baseline is used', '<ul class="detail-list"><li><strong>Weather changes normal behavior</strong>Ambient temperature, wind, solar exposure and uncertain load condition healthy expectations.</li><li><strong>Reference ranges describe healthy variation</strong>They are not confidence intervals on the probability of a fault.</li><li><strong>Vibration and tilt are modeled together</strong>Their correlation is retained instead of counting the same mechanical evidence twice.</li><li><strong>Flight samples are excluded</strong>Only fresh, stationary, quality-eligible measurements can diagnose this asset.</li></ul>' + details('Conditioning context', ex.context) + details('Assessment, missing inputs and alternative explanations', ex.assessment) + details('Freshness rules', ex.freshness), `${data.metadata.baseline_training_count || 3600} HEALTHY SYNTHETIC FIT RECORDS`)}${panel('Across observation windows', historyChart(ex.history) + '<p class="tiny-note">Each window is recomputed. Adjacent posteriors are not multiplied, because correlated windows would create excessive confidence.</p>' + details('All available assessment windows', ex.history), 'HISTORICAL WINDOWS / NOT A RECURSIVE DBN')}</div>`;
     }
     if (evidenceTab === 'network') {
       const calc = ex.calculation || {}, rows = calc.states || [];
-      html = `<div class="evidence-grid">${panel('An inspection can revise a strong sensor signal', probabilityPanel(ex), 'SAME WINDOW', true)}${panel('A declared dependency model', '<p class="panel-copy">Select a variable to inspect its parents and children. The arrows declare conditional dependencies; they do not prove physical causality.</p><svg id="network-svg" viewBox="0 0 1050 510" role="img" aria-label="Bayesian dependency network with selectable variables"></svg><div id="network-node-info" class="network-tooltip"></div>', 'CONDITIONS → STATES → OBSERVATIONS', true)}${panel(`Exact joint-state enumeration · ${rows.length || 'no'} states`, rows.length ? table(['M', 'T', 'Sensor issue', 'Energized', 'Prior', 'Sensor log L', 'Inspection L', 'After sensors', 'Posterior'], rows.map(r => [r.mechanical ? '1' : '0', r.thermal ? '1' : '0', r.sensor_fault ? '1' : '0', r.energized ? '1' : '0', pct(r.prior_probability), fmt(r.log_sensor_likelihood,2), fmt(r.visual_likelihood,3), pct(r.posterior_without_visual), pct(r.posterior_probability)])) + '<p class="tiny-note">M and T can coexist with a sensor issue. Known energized state is fixed; an unknown energized state is explicitly enumerated. Tiny probabilities are rounded here; the export preserves precision.</p>' : empty('No current calculation is available without a usable observation.'), 'NORMALIZED JOINT PROBABILITIES', true)}${panel('Inference and parameter assumptions', '<p class="panel-copy">Posterior ∝ prior × sensor likelihood × eligible inspection likelihood. Mechanical observation channels enter as one correlated likelihood group. The inspection factor uses state-specific modality coverage.</p>' + details('Priors and evidence availability', {priors:calc.priors, evidence_state:calc.evidence_state}, true) + details('Likelihood groups', calc.likelihood_groups) + details('Inspection likelihood assumptions', calc.visual) + details('All calculation assumptions', calc.assumptions), 'EXACT ENUMERATION', true)}</div>`;
+      html = `<div class="evidence-grid">${panel('What the available evidence can establish', probabilityPanel(ex), `${esc(asset)} / SAME WINDOW`, true)}${panel('A declared dependency model', '<p class="panel-copy">Select a variable to inspect its parents and children. The arrows declare conditional dependencies; they do not prove physical causality.</p><svg id="network-svg" viewBox="0 0 1050 510" role="img" aria-label="Bayesian dependency network with selectable variables"></svg><div id="network-node-info" class="network-tooltip"></div>', 'CONDITIONS → STATES → OBSERVATIONS', true)}${panel(`Exact joint-state enumeration · ${rows.length || 'no'} states`, rows.length ? table(['M', 'T', 'Sensor issue', 'Energized', 'Prior', 'Sensor log L', 'Inspection L', 'After sensors', 'Posterior'], rows.map(r => [r.mechanical ? '1' : '0', r.thermal ? '1' : '0', r.sensor_fault ? '1' : '0', r.energized ? '1' : '0', pct(r.prior_probability), fmt(r.log_sensor_likelihood,2), fmt(r.visual_likelihood,3), pct(r.posterior_without_visual), pct(r.posterior_probability)])) + '<p class="tiny-note">M and T can coexist with a sensor issue. Known energized state is fixed; an unknown energized state is explicitly enumerated. Tiny probabilities are rounded here; the export preserves precision.</p>' : empty('No current calculation is available without a usable observation.'), 'NORMALIZED JOINT PROBABILITIES', true)}${panel('Inference and parameter assumptions', '<p class="panel-copy">Posterior ∝ prior × sensor likelihood × eligible inspection likelihood. Mechanical observation channels enter as one correlated likelihood group. The inspection factor uses state-specific modality coverage.</p>' + details('Priors and evidence availability', {priors:calc.priors, evidence_state:calc.evidence_state}, true) + details('Likelihood groups', calc.likelihood_groups) + details('Inspection likelihood assumptions', calc.visual) + details('All calculation assumptions', calc.assumptions), 'EXACT ENUMERATION', true)}</div>`;
     }
     if (evidenceTab === 'weather') html = `<div class="evidence-grid">${panel('Weather available at this snapshot', keyValues(Object.fromEntries(Object.entries(f.weather || {}).filter(([,v]) => typeof v !== 'object'))) + details('Full received weather and warnings', f.weather), 'NOT FUTURE WEATHER')}${panel('Flight decision constraints', keyValues(Object.fromEntries(Object.entries(f.weather_decision || {}).filter(([,v]) => typeof v !== 'object'))) + details('Weather decision and uncertainty', f.weather_decision) + details('Route model and executed timings', f.route), 'SIMULATED LEG / NOT AIRSPACE PLANNING')}${panel('Where each assumption comes from', table(['Component', 'Source and boundary'], Object.entries(data.metadata.provenance || {}).map(([k,v]) => [esc(label(k)), esc(v)])) + '<p class="tiny-note">Official geometry is not a validated electrical topology. Assumed charging availability and simulated point-to-point routes require operational validation.</p>', 'SOURCE REGISTER', true)}${panel('Frozen release binding', keyValues({model:data.metadata.model_version, baseline:data.metadata.baseline_version, scenario:data.metadata.scenario, seed:data.metadata.seed, code_hash:data.metadata.code_hash, snapshot_id:f.snapshot_id}) + details('All release metadata and policy assumptions', data.metadata), 'REPRODUCIBLE SNAPSHOT', true)}</div>`;
     if (evidenceTab === 'audit') {
@@ -210,36 +299,50 @@
   function bind() {
     document.querySelectorAll('[data-page]').forEach(b=>b.addEventListener('click',()=>setPage(b.dataset.page)));
     document.querySelector('.brand').addEventListener('click',e=>{e.preventDefault();setPage('showcase');});
-    $('chapter-nav').innerHTML=chapters.map((c,i)=>`<button data-chapter="${i}" aria-label="Chapter ${i+1}: ${esc(c.title)}"><span class="chapter-index">${String(i+1).padStart(2,'0')}</span><span>${titleShort[i]||esc(c.title)}</span></button>`).join('');
+    $('chapter-nav').style.setProperty('--chapter-count',chapters.length);
+    $('chapter-nav').innerHTML=chapters.map((c,i)=>`<button data-chapter="${i}" data-asset="${esc(c.asset_id || data.metadata.asset_id)}" aria-label="Chapter ${i+1}: ${esc(c.title)} · ${esc(c.asset_id || data.metadata.asset_id)}"><span class="chapter-index">${String(i+1).padStart(2,'0')}</span><span>${esc(c.short_title || c.title)}</span></button>`).join('');
     document.querySelectorAll('[data-chapter]').forEach(b=>b.addEventListener('click',()=>goChapter(Number(b.dataset.chapter))));
     $('play-toggle').addEventListener('click',()=>playing?pause():play());
     $('previous').addEventListener('click',()=>goChapter(chapterIndex()-1));
     $('next').addEventListener('click',()=>goChapter(chapterIndex()+1));
     $('replay').addEventListener('click',()=>{cursor=0;reduced?pause():play();renderShowcase(true);});
     $('scrubber').max=duration;$('scrubber').addEventListener('input',()=>{cursor=Number($('scrubber').value);pause();renderShowcase(true);});
-    $('evidence-link').addEventListener('click',()=>{evidenceFrame=currentFrame();evidenceTab=chapterIndex()>=4?'baseline':'operations';setPage('dashboard');});
+    $('evidence-link').addEventListener('click',()=>{evidenceFrame=currentFrame();evidenceTab=evidenceFrame.explanation?.reading || evidenceFrame.explanation?.visual?.evidence ? 'baseline' : 'operations';setPage('dashboard');});
     $('return-showcase').addEventListener('click',()=>{pause();setPage('showcase');});
-    $('snapshot-select').innerHTML=frames.map(f=>`<option value="${esc(f.snapshot_id)}">T+${f.minute} · ${esc(f.snapshot_id)}</option>`).join('');
+    $('snapshot-select').innerHTML=frames.map(f=>`<option value="${esc(f.snapshot_id)}">${esc(assetFor(f))} · T+${f.minute} · ${esc(f.snapshot_id)}</option>`).join('');
     $('snapshot-select').addEventListener('change',()=>{evidenceFrame=frames.find(f=>f.snapshot_id===$('snapshot-select').value);renderEvidence();});
     document.querySelectorAll('[data-evidence]').forEach(b=>b.addEventListener('click',()=>{evidenceTab=b.dataset.evidence;renderEvidence();}));
     $('download-snapshot').addEventListener('click',exportSnapshot);
     document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});
-    window.addEventListener('hashchange',()=>{const target=location.hash.slice(1);if(['showcase','dashboard','validation'].includes(target))setPage(target);});
+    window.addEventListener('resize',()=>{if(page==='showcase')renderShowcase(true);});
+    window.addEventListener('message',event=>{
+      if(event.source!==$('schedule-frame').contentWindow)return;
+      if(event.data?.type==='gridscout:route-height' && Number.isFinite(event.data.height)) {
+        $('schedule-frame').style.height=`${Math.max(600,Math.min(12000,event.data.height))}px`;
+      }
+    });
+    window.addEventListener('hashchange',()=>{const target=location.hash.slice(1);if(['showcase','schedule','dashboard','validation'].includes(target))setPage(target);});
   }
   async function init() {
     try {
       const embedded=$('showcase-data').textContent.trim();
       data=embedded&&embedded!=='__SHOWCASE_DATA__'?JSON.parse(embedded):await fetch('../artifacts/showcase_data.json').then(r=>{if(!r.ok)throw Error('Mission data request failed');return r.json();});
-      if(!data.frames?.length||data.chapters?.length!==6||!data.geometry?.length)throw Error('Incomplete mission record');
+      if(!data.frames?.length||!data.chapters?.length||!data.geometry?.length)throw Error('Incomplete mission record');
+      if(data.chapters.some(c=>!Number.isFinite(c.duration_seconds)||c.duration_seconds<=0))throw Error('Invalid chapter duration');
       frames=data.frames;chapters=data.chapters;duration=chapters.reduce((n,c)=>n+c.duration_seconds,0);boundaries=[];let sum=0;for(const c of chapters){boundaries.push(sum);sum+=c.duration_seconds;}
+      for(const chapter of chapters) for(const minute of chapter.frame_minutes || [chapter.minute]) {
+        const asset=chapter.asset_id || data.metadata.asset_id;
+        if(!frames.some(f=>assetFor(f)===asset&&f.minute===minute))throw Error(`Missing frozen snapshot for ${asset} at T+${minute}`);
+      }
+      $('replay-duration').textContent=`Synthetic replay · ${duration} sec`;
       const vm=data.validation?.metadata;bindingOK=Boolean(vm&&vm.model_version===data.metadata.model_version&&vm.code_hash===data.metadata.code_hash);
       $('replay-stage').hidden=false;
       if(bindingOK)$('load-notice').hidden=true;else{$('load-notice').classList.add('error');$('load-notice').textContent='Release check failed: the validation report and replay do not share a model/source fingerprint. Autoplay is paused and performance claims are withheld. Chapters remain available for inspection.';}
       $('version-footer').textContent=`${data.metadata.model_version} · source ${data.metadata.code_hash.slice(0,8)}`;
       $('source-link').href=data.metadata.repository_url||'https://github.com/Yuting-He/yuting-he-portfolio/tree/main/watt-hackathon';
       bind();evidenceFrame=frames[0];renderShowcase(true);
-      const initial=location.hash.slice(1);if(['dashboard','validation'].includes(initial))setPage(initial);else if(!reduced&&bindingOK)play();
-      window.GridScout={getState:()=>({page,playing,cursor,chapter:chapterIndex(),minute:currentFrame().minute,snapshot_id:currentFrame().snapshot_id,evidence_snapshot_id:evidenceFrame?.snapshot_id,evidenceTab,bindingOK,duration}),pause,play,goChapter,setPage};
+      const initial=location.hash.slice(1);if(['schedule','dashboard','validation'].includes(initial))setPage(initial);else if(!reduced&&bindingOK)play();
+      window.GridScout={getState:()=>({page,playing,cursor,chapter:chapterIndex(),chapter_id:chapters[chapterIndex()].id,asset_id:assetFor(currentFrame()),minute:currentFrame().minute,snapshot_id:currentFrame().snapshot_id,evidence_snapshot_id:evidenceFrame?.snapshot_id,evidence_asset_id:evidenceFrame?assetFor(evidenceFrame):null,evidenceTab,bindingOK,duration}),pause,play,goChapter,setPage};
       requestAnimationFrame(tick);
     }catch(error){$('load-notice').classList.add('error');$('load-notice').innerHTML=`The frozen mission record could not be loaded. ${esc(error.message)}<br>Please reload the page or inspect the project source. No performance claim is displayed.`;console.error('GridScout load:',error);}
   }

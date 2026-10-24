@@ -199,6 +199,9 @@ def test_blocked_deadline_and_mission_horizon_have_explicit_handover():
     sim = TwinSimulation("normal", 42, autonomous=True).advance_to(1)
     # Invalidate a queued destination without overriding any flight guard.
     queued = next(o for o in sim.operations if o["asset_id"] != o["origin_asset"])
+    # This check requires target telemetry; a later nearby camera-only view
+    # cannot complete the blocked coverage-restoration requirement.
+    queued["requires_target_telemetry"] = True
     sim.charging_sites.remove(queued["asset_id"])
     sim.advance_to(66)
     assert queued["status"] == "deferred"

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b1319">
-  <meta name="description" content="GridScout: an explainable drone inspection response, from a received warning to an auditable decision. A 75-second synthetic mission replay on the official WATT challenge map.">
+  <meta name="description" content="GridScout: an explainable drone inspection response, from a received warning to an auditable decision. A synthetic mission replay on the official WATT challenge map: reuse nearby coverage, then follow a remote inspection through telemetry and inference.">
   <title>GridScout — Follow the evidence</title>
   <link rel="stylesheet" href="showcase.css">
 </head>
@@ -16,6 +16,7 @@
     <span class="event-label">WATT HACKATHON <span>/</span> EXPLAINABLE INSPECTION</span>
     <nav class="primary-tabs" aria-label="Main navigation">
       <button class="active" data-page="showcase" aria-current="page">Showcase</button>
+      <button data-page="schedule">Route showcase</button>
       <button data-page="dashboard">Dashboard</button>
       <button data-page="validation">Validation</button>
     </nav>
@@ -23,17 +24,20 @@
   </header>
   <main id="main">
     <section id="page-showcase" class="page">
-      <div class="intro"><div><p class="eyebrow"><span class="live-dot"></span> FIVE DRONES. ONE EXPLAINABLE RESPONSE.</p><h1>Follow the warning.<br class="mobile-break"> Find the evidence.</h1><p class="intro-copy">A post-storm report arrives. See how GridScout decides where to inspect, which drone to send, and what the evidence changes.</p></div><div class="provenance-pills"><span>Official challenge map</span><span>Synthetic replay · 75 sec</span><span class="muted-pill">Not field calibrated</span></div></div>
+      <div class="intro"><div><p class="eyebrow"><span class="live-dot"></span> FIVE DRONES. ONE EXPLAINABLE RESPONSE.</p><h1>Follow the warning.<br class="mobile-break"> Find the evidence.</h1><p class="intro-copy">A post-storm report arrives. See how GridScout decides when to reuse a nearby drone, when to fly, and what the evidence can establish.</p></div><div class="provenance-pills"><span>Official challenge map</span><span id="replay-duration">Synthetic mission replay</span><span class="muted-pill">Not field calibrated</span></div></div>
       <div id="load-notice" class="load-notice" role="status">Loading the frozen mission record…</div>
       <div class="replay-stage" id="replay-stage" hidden>
         <nav id="chapter-nav" class="chapter-nav" aria-label="Story chapters"></nav>
         <div class="story-grid">
-          <section class="map-panel" aria-label="Mission map"><div class="map-header"><div><span class="eyebrow">OFFICIAL NETWORK / SYNTHETIC FLIGHT</span><h2 id="map-location">LINE_058 · mission area</h2></div><span class="time-pill" id="map-clock">T+44 min</span></div><svg id="mission-map" viewBox="0 0 850 540" role="img" aria-labelledby="map-title map-description"><title id="map-title">Official line geometry and drone positions</title><desc id="map-description">Grey lines have no current usable observation. A dashed route is planned, and a cyan line shows the flown segment.</desc></svg><div class="map-context" id="map-context"></div><div class="map-footer"><span><i class="legend-line"></i>Official line geometry</span><span><i class="legend-route"></i>Simulated flight leg</span><span><i class="legend-drone">◆</i>Drone</span></div></section>
-          <article class="story-card" aria-live="polite" aria-atomic="true"><div class="story-kicker"><span id="chapter-number">01 / 06</span><span id="stage-status" class="status-chip">Coverage</span></div><h2 id="story-title"></h2><div id="story-metric"></div><div class="story-reasons"><div><span class="reason-label">WHAT HAPPENED</span><p id="story-what"></p></div><div><span class="reason-label">WHY THIS DECISION</span><p id="story-why"></p></div><div><span class="reason-label">NEXT STEP</span><p id="story-next"></p></div></div><button id="evidence-link" class="evidence-button">View evidence for this step <span aria-hidden="true">↗</span></button><div class="snapshot-note" id="story-snapshot"></div></article>
+          <section class="map-panel" aria-label="Mission map"><div class="map-header"><div><span class="eyebrow">OFFICIAL NETWORK / INSPECTION MISSIONS</span><h2 id="map-location">Post-storm inspection network</h2></div><span class="time-pill" id="map-clock">T+44 min</span></div><svg id="mission-map" viewBox="0 0 850 540" role="img" aria-labelledby="map-title map-description"><title id="map-title">Official line geometry and drone positions</title><desc id="map-description">Grey lines have no current usable telemetry. Drone labels link to their real positions; nearby imagery does not imply contact measurements.</desc></svg><div class="map-context" id="map-context"></div><div class="map-footer"><span><i class="legend-line"></i>Official line geometry</span><span><i class="legend-route"></i>Inspection / position guide</span><span><i class="legend-drone">◆</i>Drone</span></div></section>
+          <article class="story-card" aria-live="polite" aria-atomic="true"><div class="story-kicker"><span id="chapter-number">Loading chapters</span><span id="stage-status" class="status-chip">Coverage</span></div><h2 id="story-title"></h2><div id="story-metric"></div><div class="story-reasons"><div><span class="reason-label">WHAT HAPPENED</span><p id="story-what"></p></div><div><span class="reason-label">WHY THIS DECISION</span><p id="story-why"></p></div><div><span class="reason-label">NEXT STEP</span><p id="story-next"></p></div></div><button id="evidence-link" class="evidence-button">View evidence for this step <span aria-hidden="true">↗</span></button><div class="snapshot-note" id="story-snapshot"></div></article>
         </div>
-        <div class="playback-bar"><div class="transport"><button id="play-toggle" class="play-button" aria-label="Pause replay">Ⅱ</button><button id="previous" class="icon-button" aria-label="Previous chapter">←</button><button id="next" class="icon-button" aria-label="Next chapter">→</button><button id="replay" class="text-button"><span aria-hidden="true">↺</span> Replay</button></div><div class="playback-timeline"><div class="timeline-top"><span id="playback-status">Playing a frozen mission</span><span id="elapsed">00:00 / 01:15</span></div><input id="scrubber" type="range" min="0" max="75" value="0" step="0.1" aria-label="Replay position in seconds"></div><span class="no-audio">NO AUDIO NEEDED</span></div>
+        <div class="playback-bar"><div class="transport"><button id="play-toggle" class="play-button" aria-label="Pause replay">Ⅱ</button><button id="previous" class="icon-button" aria-label="Previous chapter">←</button><button id="next" class="icon-button" aria-label="Next chapter">→</button><button id="replay" class="text-button"><span aria-hidden="true">↺</span> Replay</button></div><div class="playback-timeline"><div class="timeline-top"><span id="playback-status">Playing a frozen mission</span><span id="elapsed">00:00 / —</span></div><input id="scrubber" type="range" min="0" max="1" value="0" step="0.1" aria-label="Replay position in seconds"></div><span class="no-audio">NO AUDIO NEEDED</span></div>
       </div>
       <div class="principles"><div><span class="principle-num">01</span><p><strong>Context before thresholds</strong><span>Weather changes what “normal” looks like.</span></p></div><div><span class="principle-num">02</span><p><strong>Evidence before confidence</strong><span>Missing observations stay Unknown.</span></p></div><div><span class="principle-num">03</span><p><strong>A clear human handoff</strong><span>A clear image does not clear every risk.</span></p></div></div>
+    </section>
+    <section id="page-schedule" class="page" hidden aria-label="Scheduling route showcase">
+      <iframe id="schedule-frame" title="GridScout scheduling route replay" scrolling="no"></iframe>
     </section>
     <section id="page-dashboard" class="page" hidden>
       <div class="section-heading"><div><p class="eyebrow">READ-ONLY EVIDENCE / SAME REPLAY CONTEXT</p><h1>The decision, open to inspection.</h1><p id="dashboard-context" class="intro-copy"></p></div><button id="return-showcase" class="outline-button">← Return to paused Showcase</button></div>
@@ -46,6 +50,7 @@
   <footer class="site-footer"><span>GridScout <span class="footer-slash">/</span> Observe. Explain. Respond.</span><span id="version-footer">Loading model metadata</span><span>Demonstration · real map, simulated telemetry and inspection</span><span class="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL 1.0</a></span></footer>
 </div>
 <script id="showcase-data" type="application/json">__SHOWCASE_DATA__</script>
+<script id="schedule-document" type="application/json">__SCHEDULE_DOCUMENT__</script>
 <script src="showcase.js"></script>
 </body>
 </html>

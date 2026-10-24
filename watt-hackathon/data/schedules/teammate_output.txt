@@ -1,0 +1,118 @@
+Total distance: 184.681261 km
+All lines checked: False
+Unchecked lines: ['LINE_005', 'LINE_006', 'LINE_009', 'LINE_010', 'LINE_011', 'LINE_033', 'LINE_034', 'LINE_037', 'LINE_038', 'LINE_059']
+
+Starting from SUBSTATION_07 to check LINE_024
+
+Newly checked lines (each line listed once):
+{'line_id': 'LINE_014', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_026'}
+{'line_id': 'LINE_001', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_027'}
+{'line_id': 'LINE_020', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_027'}
+{'line_id': 'LINE_023', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_028'}
+{'line_id': 'LINE_044', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_028'}
+{'line_id': 'LINE_055', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_029'}
+{'line_id': 'LINE_045', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_031'}
+{'line_id': 'LINE_047', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_031'}
+{'line_id': 'LINE_048', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_034'}
+{'line_id': 'LINE_050', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_034'}
+{'line_id': 'LINE_046', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_035'}
+{'line_id': 'LINE_049', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'NODE_035'}
+{'line_id': 'LINE_056', 'checked_at_node': 'SUBSTATION_07', 'other_end_node_id': 'SUBSTATION_08'}
+{'line_id': 'LINE_017', 'checked_at_node': 'NODE_031', 'other_end_node_id': 'NODE_030'}
+{'line_id': 'LINE_018', 'checked_at_node': 'NODE_027', 'other_end_node_id': 'NODE_030'}
+{'line_id': 'LINE_022', 'checked_at_node': 'NODE_035', 'other_end_node_id': 'NODE_042'}
+{'line_id': 'LINE_019', 'checked_at_node': 'NODE_034', 'other_end_node_id': 'NODE_022'}
+{'line_id': 'LINE_054', 'checked_at_node': 'NODE_029', 'other_end_node_id': 'SUBSTATION_12'}
+{'line_id': 'LINE_043', 'checked_at_node': 'NODE_028', 'other_end_node_id': 'NODE_026'}
+{'line_id': 'LINE_004', 'checked_at_node': 'NODE_026', 'other_end_node_id': 'NODE_019'}
+{'line_id': 'LINE_021', 'checked_at_node': 'NODE_030', 'other_end_node_id': 'NODE_041'}
+{'line_id': 'LINE_036', 'checked_at_node': 'NODE_022', 'other_end_node_id': 'NODE_016'}
+{'line_id': 'LINE_002', 'checked_at_node': 'NODE_022', 'other_end_node_id': 'SUBSTATION_06'}
+{'line_id': 'LINE_060', 'checked_at_node': 'SUBSTATION_08', 'other_end_node_id': 'NODE_021'}
+{'line_id': 'LINE_061', 'checked_at_node': 'SUBSTATION_08', 'other_end_node_id': 'NODE_021'}
+{'line_id': 'LINE_003', 'checked_at_node': 'NODE_021', 'other_end_node_id': 'NODE_023'}
+{'line_id': 'LINE_039', 'checked_at_node': 'NODE_023', 'other_end_node_id': 'NODE_033'}
+{'line_id': 'LINE_012', 'checked_at_node': 'NODE_033', 'other_end_node_id': 'NODE_032'}
+{'line_id': 'LINE_013', 'checked_at_node': 'NODE_033', 'other_end_node_id': 'SUBSTATION_13'}
+{'line_id': 'LINE_007', 'checked_at_node': 'SUBSTATION_13', 'other_end_node_id': 'NODE_025'}
+{'line_id': 'LINE_008', 'checked_at_node': 'NODE_025', 'other_end_node_id': 'NODE_024'}
+{'line_id': 'LINE_028', 'checked_at_node': 'NODE_025', 'other_end_node_id': 'SUBSTATION_12'}
+{'line_id': 'LINE_015', 'checked_at_node': 'NODE_016', 'other_end_node_id': 'NODE_013'}
+{'line_id': 'LINE_030', 'checked_at_node': 'NODE_016', 'other_end_node_id': 'NODE_015'}
+{'line_id': 'LINE_051', 'checked_at_node': 'NODE_015', 'other_end_node_id': 'SUBSTATION_15'}
+{'line_id': 'LINE_052', 'checked_at_node': 'NODE_015', 'other_end_node_id': 'SUBSTATION_15'}
+{'line_id': 'LINE_026', 'checked_at_node': 'SUBSTATION_15', 'other_end_node_id': 'NODE_009'}
+{'line_id': 'LINE_025', 'checked_at_node': 'NODE_009', 'other_end_node_id': 'SUBSTATION_05'}
+{'line_id': 'LINE_058', 'checked_at_node': 'NODE_009', 'other_end_node_id': 'SUBSTATION_05'}
+{'line_id': 'LINE_064', 'checked_at_node': 'NODE_009', 'other_end_node_id': 'SUBSTATION_01'}
+{'line_id': 'LINE_041', 'checked_at_node': 'SUBSTATION_01', 'other_end_node_id': 'NODE_005'}
+{'line_id': 'LINE_040', 'checked_at_node': 'SUBSTATION_01', 'other_end_node_id': 'NODE_006'}
+{'line_id': 'LINE_029', 'checked_at_node': 'NODE_006', 'other_end_node_id': 'NODE_002'}
+{'line_id': 'LINE_042', 'checked_at_node': 'NODE_005', 'other_end_node_id': 'NODE_001'}
+{'line_id': 'LINE_035', 'checked_at_node': 'NODE_005', 'other_end_node_id': 'NODE_010'}
+{'line_id': 'LINE_053', 'checked_at_node': 'NODE_010', 'other_end_node_id': 'SUBSTATION_11'}
+{'line_id': 'LINE_062', 'checked_at_node': 'NODE_010', 'other_end_node_id': 'NODE_012'}
+{'line_id': 'LINE_031', 'checked_at_node': 'NODE_012', 'other_end_node_id': 'SUBSTATION_09'}
+{'line_id': 'LINE_032', 'checked_at_node': 'NODE_012', 'other_end_node_id': 'NODE_014'}
+{'line_id': 'LINE_063', 'checked_at_node': 'NODE_013', 'other_end_node_id': 'NODE_011'}
+{'line_id': 'LINE_057', 'checked_at_node': 'NODE_013', 'other_end_node_id': 'SUBSTATION_14'}
+{'line_id': 'LINE_016', 'checked_at_node': 'NODE_019', 'other_end_node_id': 'NODE_017'}
+{'line_id': 'LINE_027', 'checked_at_node': 'NODE_019', 'other_end_node_id': 'SUBSTATION_02'}
+
+Actual travel legs:
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_031', 'line_id': 'LINE_045', 'distance_km': 0.120347}
+{'from_node_id': 'NODE_031', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_045', 'distance_km': 0.120347}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_027', 'line_id': 'LINE_020', 'distance_km': 0.129646}
+{'from_node_id': 'NODE_027', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_020', 'distance_km': 0.129646}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_035', 'line_id': 'LINE_046', 'distance_km': 0.133852}
+{'from_node_id': 'NODE_035', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_046', 'distance_km': 0.133852}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_034', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'NODE_034', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_029', 'line_id': 'LINE_055', 'distance_km': 0.178234}
+{'from_node_id': 'NODE_029', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_055', 'distance_km': 0.178234}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_028', 'line_id': 'LINE_044', 'distance_km': 0.200379}
+{'from_node_id': 'NODE_028', 'to_node_id': 'NODE_026', 'line_id': 'LINE_043', 'distance_km': 0.306117}
+{'from_node_id': 'NODE_026', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_014', 'distance_km': 0.346521}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_027', 'line_id': 'LINE_020', 'distance_km': 0.129646}
+{'from_node_id': 'NODE_027', 'to_node_id': 'NODE_030', 'line_id': 'LINE_018', 'distance_km': 0.267824}
+{'from_node_id': 'NODE_030', 'to_node_id': 'NODE_027', 'line_id': 'LINE_018', 'distance_km': 0.267824}
+{'from_node_id': 'NODE_027', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_020', 'distance_km': 0.129646}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_034', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'NODE_034', 'to_node_id': 'NODE_022', 'line_id': 'LINE_019', 'distance_km': 2.707955}
+{'from_node_id': 'NODE_022', 'to_node_id': 'NODE_034', 'line_id': 'LINE_019', 'distance_km': 2.707955}
+{'from_node_id': 'NODE_034', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'SUBSTATION_08', 'line_id': 'LINE_056', 'distance_km': 4.280583}
+{'from_node_id': 'SUBSTATION_08', 'to_node_id': 'NODE_021', 'line_id': 'LINE_061', 'distance_km': 0.0427}
+{'from_node_id': 'NODE_021', 'to_node_id': 'NODE_023', 'line_id': 'LINE_003', 'distance_km': 6.812444}
+{'from_node_id': 'NODE_023', 'to_node_id': 'NODE_033', 'line_id': 'LINE_039', 'distance_km': 6.689526}
+{'from_node_id': 'NODE_033', 'to_node_id': 'SUBSTATION_13', 'line_id': 'LINE_013', 'distance_km': 0.293979}
+{'from_node_id': 'SUBSTATION_13', 'to_node_id': 'NODE_025', 'line_id': 'LINE_007', 'distance_km': 0.413316}
+{'from_node_id': 'NODE_025', 'to_node_id': 'SUBSTATION_12', 'line_id': 'LINE_028', 'distance_km': 4.058765}
+{'from_node_id': 'SUBSTATION_12', 'to_node_id': 'NODE_029', 'line_id': 'LINE_054', 'distance_km': 13.258399}
+{'from_node_id': 'NODE_029', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_055', 'distance_km': 0.178234}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_034', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'NODE_034', 'to_node_id': 'NODE_022', 'line_id': 'LINE_019', 'distance_km': 2.707955}
+{'from_node_id': 'NODE_022', 'to_node_id': 'NODE_016', 'line_id': 'LINE_036', 'distance_km': 7.16063}
+{'from_node_id': 'NODE_016', 'to_node_id': 'NODE_015', 'line_id': 'LINE_030', 'distance_km': 0.225255}
+{'from_node_id': 'NODE_015', 'to_node_id': 'SUBSTATION_15', 'line_id': 'LINE_052', 'distance_km': 0.095761}
+{'from_node_id': 'SUBSTATION_15', 'to_node_id': 'NODE_009', 'line_id': 'LINE_026', 'distance_km': 10.844813}
+{'from_node_id': 'NODE_009', 'to_node_id': 'SUBSTATION_01', 'line_id': 'LINE_064', 'distance_km': 10.069738}
+{'from_node_id': 'SUBSTATION_01', 'to_node_id': 'NODE_006', 'line_id': 'LINE_040', 'distance_km': 0.096928}
+{'from_node_id': 'NODE_006', 'to_node_id': 'SUBSTATION_01', 'line_id': 'LINE_040', 'distance_km': 0.096928}
+{'from_node_id': 'SUBSTATION_01', 'to_node_id': 'NODE_005', 'line_id': 'LINE_041', 'distance_km': 1.363834}
+{'from_node_id': 'NODE_005', 'to_node_id': 'NODE_010', 'line_id': 'LINE_035', 'distance_km': 14.079621}
+{'from_node_id': 'NODE_010', 'to_node_id': 'NODE_012', 'line_id': 'LINE_062', 'distance_km': 3.616923}
+{'from_node_id': 'NODE_012', 'to_node_id': 'NODE_010', 'line_id': 'LINE_062', 'distance_km': 3.616923}
+{'from_node_id': 'NODE_010', 'to_node_id': 'NODE_005', 'line_id': 'LINE_035', 'distance_km': 14.079621}
+{'from_node_id': 'NODE_005', 'to_node_id': 'SUBSTATION_01', 'line_id': 'LINE_041', 'distance_km': 1.363834}
+{'from_node_id': 'SUBSTATION_01', 'to_node_id': 'NODE_009', 'line_id': 'LINE_064', 'distance_km': 10.069738}
+{'from_node_id': 'NODE_009', 'to_node_id': 'SUBSTATION_15', 'line_id': 'LINE_026', 'distance_km': 10.844813}
+{'from_node_id': 'SUBSTATION_15', 'to_node_id': 'NODE_015', 'line_id': 'LINE_052', 'distance_km': 0.095761}
+{'from_node_id': 'NODE_015', 'to_node_id': 'NODE_016', 'line_id': 'LINE_030', 'distance_km': 0.225255}
+{'from_node_id': 'NODE_016', 'to_node_id': 'NODE_013', 'line_id': 'LINE_015', 'distance_km': 11.13199}
+{'from_node_id': 'NODE_013', 'to_node_id': 'NODE_016', 'line_id': 'LINE_015', 'distance_km': 11.13199}
+{'from_node_id': 'NODE_016', 'to_node_id': 'NODE_022', 'line_id': 'LINE_036', 'distance_km': 7.16063}
+{'from_node_id': 'NODE_022', 'to_node_id': 'NODE_034', 'line_id': 'LINE_019', 'distance_km': 2.707955}
+{'from_node_id': 'NODE_034', 'to_node_id': 'SUBSTATION_07', 'line_id': 'LINE_048', 'distance_km': 0.150476}
+{'from_node_id': 'SUBSTATION_07', 'to_node_id': 'NODE_026', 'line_id': 'LINE_014', 'distance_km': 0.346521}
+{'from_node_id': 'NODE_026', 'to_node_id': 'NODE_019', 'line_id': 'LINE_004', 'distance_km': 16.429017}

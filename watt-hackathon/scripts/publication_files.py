@@ -17,11 +17,12 @@ def publication_files():
     paths = set()
     for pattern in ("*.md", "*.toml", "requirements*.txt", "app.py", ".gitignore", "launch.ps1"):
         paths.update(ROOT.glob(pattern))
-    for folder in ("gridscout", "tests", "web", "scripts", "scenarios", "data/official", ".streamlit"):
+    for folder in ("gridscout", "tests", "web", "scripts", "scenarios", "data/official", "data/schedules", ".streamlit"):
         paths.update(p for p in (ROOT / folder).rglob("*")
                      if p.is_file() and not any(part in {"__pycache__", ".pytest_cache"} for part in p.parts))
     paths.update(ROOT / relative for relative in (
-        "artifacts/showcase_data.json", "artifacts/validation_summary.json", "dist/index.html"))
+        "artifacts/showcase_data.json", "artifacts/validation_summary.json", "artifacts/schedule_replay.json",
+        "dist/index.html", "dist/schedule.html"))
     entries = []
     for path in sorted(paths):
         relative = path.relative_to(ROOT).as_posix()
@@ -34,6 +35,8 @@ def publication_files():
                         "content": base64.b64encode(raw).decode("ascii"), "bytes": len(raw)})
     index = next(row for row in entries if row["path"] == PREFIX + "dist/index.html")
     entries.append({**index, "path": PREFIX + "index.html"})
+    schedule = next(row for row in entries if row["path"] == PREFIX + "dist/schedule.html")
+    entries.append({**schedule, "path": PREFIX + "schedule.html"})
     entries.append({"path": PREFIX + ".nojekyll", "encoding": "base64", "content": "", "bytes": 0})
     return entries
 

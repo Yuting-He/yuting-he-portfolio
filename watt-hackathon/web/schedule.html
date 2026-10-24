@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0a1218">
+  <meta name="description" content="Explore the GridScout inspection route: 56 legs, 184.68 kilometres, and the reported network coverage.">
+  <title>GridScout — Route showcase</title>
+  <link rel="stylesheet" href="schedule.css">
+</head>
+<body>
+<a class="skip-link" href="#route-main">Skip to route</a>
+<div class="route-shell">
+  <header class="route-masthead">
+    <a class="brand" href="./index.html#showcase" target="_top" aria-label="GridScout home"><span class="brand-symbol" aria-hidden="true">◈</span>GridScout<span class="brand-dot">.</span></a>
+    <span class="event-label">WATT HACKATHON / ROUTE SHOWCASE</span>
+    <a class="back-link" href="./index.html#showcase" target="_top">← All showcases</a>
+  </header>
+  <main id="route-main">
+    <section class="route-intro" aria-labelledby="route-title">
+      <div><p class="eyebrow"><span class="live-dot"></span> NETWORK INSPECTION / ROUTE REPLAY</p><h1 id="route-title">Every leg.<br> One connected journey.</h1><p class="intro-copy">Follow the inspection route across the network. Explore each movement, track the distance, and see the reported line coverage.</p></div>
+      <div class="journey-summary"><span class="small-label">THE JOURNEY</span><div class="journey-endpoints"><span id="journey-start">SUBSTATION_07</span><span class="journey-arrow" aria-hidden="true">→</span><span id="journey-end">NODE_019</span></div><span class="journey-caption">Start to finish · step through at your own pace</span></div>
+    </section>
+    <div id="route-error" class="route-error" role="alert" hidden></div>
+    <div id="route-content" hidden>
+      <section class="summary-strip" aria-label="Route summary">
+        <div class="summary-item"><span class="small-label">TOTAL DISTANCE</span><div class="summary-number"><span id="stat-distance">184.68</span><small>km</small></div></div>
+        <div class="summary-item"><span class="small-label">ROUTE LEGS</span><div class="summary-number" id="stat-legs">56</div></div>
+        <div class="summary-item"><span class="small-label">REPORTED CHECKED</span><div class="summary-number teal" id="stat-checked">53</div></div>
+        <div class="summary-item coverage-summary"><span class="small-label">COVERAGE REMAINING</span><div class="coverage-numbers"><span><strong id="stat-unchecked">10</strong> unchecked</span><span><strong id="stat-unspecified">1</strong> unreported</span></div></div>
+      </section>
+      <section class="route-stage" aria-label="Interactive route replay">
+        <div class="stage-topline"><div class="stage-heading"><span class="live-dot"></span><h2>Explore the route</h2></div><div class="view-tabs" role="group" aria-label="Map view"><button id="view-route" class="active" aria-pressed="true">Route</button><button id="view-coverage" aria-pressed="false">Reported coverage</button></div></div>
+        <div class="stage-grid">
+          <section class="map-panel" aria-label="Network map">
+            <div class="map-topline"><span class="map-caption" id="map-caption">OFFICIAL NETWORK · 29 ROUTE LINES</span><div class="map-controls" role="group" aria-label="Map framing"><button id="zoom-route" title="Fit the route">Fit route</button><button id="zoom-network" class="active" title="Fit the entire network">All network</button></div></div>
+            <svg id="route-map" viewBox="0 0 860 530" role="img" aria-labelledby="route-map-title route-map-description"><title id="route-map-title">Inspection route on the official network</title><desc id="route-map-description">Use the playback controls to follow the route, or switch to reported coverage to explore the inspection results.</desc></svg>
+            <div class="map-bottomline"><div class="map-legend" id="route-legend"><span><i class="legend-swatch planned"></i>Route</span><span><i class="legend-swatch travelled"></i>Travelled</span><span><i class="legend-swatch current"></i>Current leg</span></div><div class="map-legend" id="coverage-legend" hidden><span><i class="legend-swatch travelled"></i>Checked</span><span><i class="legend-swatch unchecked"></i>Unchecked</span><span><i class="legend-swatch unreported"></i>Unreported</span></div><span id="map-position-label" class="map-position-label">At the start</span></div>
+          </section>
+          <aside class="leg-panel" aria-label="Current route leg">
+            <div class="leg-kicker"><span class="small-label" id="leg-kicker">READY TO EXPLORE</span><span class="status-chip" id="route-status">Paused</span></div>
+            <div class="leg-title-row"><h2 id="leg-title">Leg 01<span> / 56</span></h2><span id="leg-line" class="line-chip">LINE_047</span></div>
+            <div class="leg-endpoints"><div><i class="endpoint-dot start-dot"></i><span class="small-label">FROM</span><strong id="leg-from">SUBSTATION_07</strong></div><div><i class="endpoint-dot end-dot"></i><span class="small-label">TO</span><strong id="leg-to">NODE_031</strong></div></div>
+            <div class="leg-metrics"><div><span class="small-label">THIS LEG</span><strong id="leg-distance">0.00 <small>km</small></strong></div><div><span class="small-label">TRAVELLED</span><strong id="distance-travelled">0.00 <small>km</small></strong></div></div>
+            <div class="journey-progress"><div><span>Route progress</span><strong id="route-percent">0%</strong></div><div class="progress-track"><div id="route-progress-fill"></div></div><p><span id="completed-legs">0 of 56 legs complete</span><span id="distance-remaining">184.68 km to go</span></p></div>
+            <div class="next-leg"><span class="small-label">UP NEXT</span><p id="next-leg">Preparing route…</p></div>
+          </aside>
+        </div>
+        <div class="playback-bar">
+          <div class="transport"><button id="route-play" class="play-button" aria-label="Play route"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5 16 10 6 16.5Z"/></svg><span>Play</span></button><button id="route-previous" class="icon-button" aria-label="Previous leg" title="Previous leg">←</button><button id="route-next" class="icon-button" aria-label="Next leg" title="Next leg">→</button><button id="route-restart" class="icon-button" aria-label="Restart route" title="Restart route">↺</button></div>
+          <div class="timeline"><div class="timeline-labels"><span id="timeline-position">Start</span><span id="timeline-end">56 legs · 184.68 km</span></div><input id="route-scrubber" type="range" min="0" max="56" value="0" step="0.001" aria-label="Route position in legs"></div>
+          <label class="speed-control"><span>Speed</span><select id="route-speed" aria-label="Playback speed"><option value="1">1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+        </div>
+        <div id="replay-announcement" class="sr-only" aria-live="polite"></div>
+      </section>
+      <section class="route-details-grid">
+        <details class="details-panel" id="leg-details"><summary><span><span class="small-label">THE ITINERARY</span><strong>All route legs <span class="count-pill" id="itinerary-count">56</span></strong></span><span class="details-chevron" aria-hidden="true">+</span></summary><div class="itinerary-content"><p class="panel-caption">Select a leg to jump to its starting point.</p><div class="table-scroll"><table class="leg-table"><thead><tr><th scope="col">Leg / line</th><th scope="col">Movement</th><th scope="col" class="numeric">km</th></tr></thead><tbody id="leg-table-body"></tbody></table></div></div></details>
+        <section class="coverage-panel" aria-labelledby="coverage-title"><div class="coverage-heading"><div><span class="small-label">NETWORK OVERVIEW</span><h2 id="coverage-title">Reported coverage</h2></div><span id="coverage-total" class="coverage-total">53 / 64 lines checked</span></div><div class="coverage-bar" id="coverage-bar" aria-hidden="true"></div><div class="coverage-filters" role="group" aria-label="Filter coverage lines"><button class="active" data-coverage="checked" aria-pressed="true">Checked <span id="filter-checked-count">53</span></button><button data-coverage="unchecked" aria-pressed="false">Unchecked <span id="filter-unchecked-count">10</span></button><button data-coverage="unspecified" aria-pressed="false">Unreported <span id="filter-unspecified-count">1</span></button></div><div class="coverage-lines" id="coverage-lines"></div><div class="coverage-selection" id="coverage-selection" aria-live="polite">Select a line to locate it on the map.</div></section>
+      </section>
+    </div>
+  </main>
+  <footer class="route-footer"><span>GridScout<span class="footer-slash">/</span>Observe. Explore. Respond.</span><span>WATT network · Route showcase</span><span class="attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noopener">ODbL 1.0</a></span></footer>
+</div>
+<script id="schedule-data" type="application/json">__SCHEDULE_DATA__</script>
+<script src="schedule.js"></script>
+</body>
+</html>

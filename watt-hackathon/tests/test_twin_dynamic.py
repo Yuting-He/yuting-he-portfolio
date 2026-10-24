@@ -169,7 +169,7 @@ def test_same_window_refresh_does_not_generate_plan_churn():
 
 
 def test_inspection_completion_releases_dependency_in_the_same_paused_window():
-    sim = TwinSimulation("dynamic", 42, autonomous=True).advance_to(60)
+    sim = TwinSimulation("dynamic", 42, autonomous=True).advance_to(51)
     inspected = next(o for o in sim.operations if o["asset_id"] == "LINE_058")
     followup = next(o for o in sim.operations if o.get("request_id") == "SYN-LEAD-FOLLOWUP")
     assert inspected["status"] == "completed" and inspected["completed_at"] == sim.minute

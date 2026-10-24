@@ -161,8 +161,10 @@ def test_asset_isolation_and_deep_copies_prevent_ui_mutating_model_or_history():
 def test_autonomous_camera_collection_preserves_comparison_and_export_is_json():
     sim = TwinSimulation("mechanical", 42).advance_to(45)
     asset = sim.drones[0].asset_id
-    sim._collect_autonomous_inspection({"id": "history-test", "sensor_id": "Drone 1", "asset_id": asset})
-    assert sim.inspection_history[0]["operation_id"] == "history-test"
+    operation = sim._operations._new_operation("report_check", asset, sim.drones[0], "History comparison", "routine", 60)
+    sim._operations._start_inspection(operation, sim.drones[0])
+    sim.step(4)
+    assert sim.inspection_history[0]["operation_id"] == operation["id"]
     exported = sim.export()
     assert exported["inference_mode"]["temporal_recursion"] is False
     assert exported["assessment_history"]

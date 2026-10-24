@@ -1,14 +1,38 @@
 # GridScout V3
 
+The additional **Route showcase** replays the teammate's exported schedule on
+the same Bavaria map: 56 travel legs, 184.681261 km, and the reported line
+coverage. Open **Route showcase** in Streamlit or the website navigation, or
+open `dist/schedule.html` directly. Playback supports seeking, stepping and speed
+selection; the route page contains no evidence or Bayesian explanation panels.
+The bundled input is `data/schedules/teammate_output.txt`; `LINE_024` remains
+unreported in its coverage list. Rebuild both self-contained pages with
+`python web/build.py`. To regenerate the intermediate JSON, run
+`python -m gridscout.schedule_replay`. The route page can also be rebuilt
+independently with `python web/build.py --route-only`.
+
 ## Judge showcase — P0 delivery
 
-The default entry is a self-guided 75-second synthetic replay. It follows the
-received LINE_058 report, Drone 5 selection, LINE_009 → LINE_058 flight,
-stationary sensing, RGB inspection and unresolved human handoff. **View this
-step's evidence** pauses playback and opens the matching asset/time snapshot in
-Dashboard. Dashboard contains operations, baseline, Bayesian calculation,
-weather and audit panels. Validation reports the current model's six-scenario
-stationary evaluation separately from the dynamic story.
+The default entry is a self-guided 105-second synthetic replay with nine
+chapters. It starts with the received LINE_058 report and a stationary RGB
+inspection by Drone 4 from adjacent LINE_025, about 7.3 m away. Drone 4 keeps
+charging. The T+47–51 camera check avoids a redundant flight, but supplies no
+contact telemetry for LINE_058. That line stays **Unknown**, with a human
+coverage request for follow-up.
+
+The story then follows Drone 5 on a distinct LINE_015 follow-up: it leaves
+LINE_009 at T+52, arrives at T+78 and completes a four-minute stationary RGB
+inspection at T+82. This target has its own received telemetry, so the replay
+shows the same-window BN calculation: context prior **4.94%**, sensors
+**0.100%**, then sensors plus the received **clear** RGB view **0.058%**.
+LINE_015 is **Normal**, with continued monitoring recommended. The flight is
+needed to collect this target's evidence; it does not duplicate Drone 4's
+nearby image check.
+
+**View this step's evidence** pauses playback and opens the matching asset/time
+snapshot in Dashboard. Dashboard contains operations, baseline, Bayesian
+calculation, weather and audit panels. Validation reports the current model's
+six-scenario stationary evaluation separately from the dynamic story.
 
 The GitHub Pages edition is an offline-capable, read-only replay and evidence
 viewer. The complete mutable Python workspaces remain available under
@@ -56,7 +80,7 @@ The BN enumerates mechanical, thermal, sensor-health and energized states; vibra
 
 Synthetic weather supports published forecasts, warning updates/cancellations, receipt times, validity and common-source deduplication. Current observations explain baseline changes; forecasts constrain flight plans and show early-deployment opportunities. A severe warning is not an independent vote for current damage. The assumed flight envelope (<18 m/s gust) is an exercise parameter, not a manufacturer limit.
 
-Five devices begin at explicit demo charging sites. Automatic target selection is an explainable heuristic over available reports, received evidence and feasibility; it is not a global mission optimizer. Pending work can be reprioritized, assigned to another eligible drone, superseded by a corrected report or cancelled by a withdrawn request. A committed flight continues to its destination; the planner does not invent an airborne diversion or bypass charging. Bounded rechecks and new anomaly episodes can create subsequent local tasks. On-site inspections are used when a drone is already at the target. Relocation respects the 30-minute flight limit, forecast hazard windows, reserved destinations and a full 180-minute recharge after arrival; perched sensing continues while charging. Unavailable targets and delayed inspections retain an explicit reason, and bounded waits can create human requests. Critical evidence can bypass an additional inspection and request immediate human review. LINE_024 remains known de-energized, with damage unknown. Optional payload budget is 200 g allocated + 50 g reserve, including integration; no hardware or flight-performance validation is implied.
+Five devices begin at explicit demo charging sites. Automatic target selection is an explainable heuristic over available reports, received evidence and feasibility; it is not a global mission optimizer. Pending work can be reprioritized, assigned to another eligible drone, superseded by a corrected report or cancelled by a withdrawn request. A committed flight continues to its destination; the planner does not invent an airborne diversion or bypass charging. Bounded rechecks and new anomaly episodes can create subsequent local tasks. On-site inspections are used when a drone is already at the target. For imagery requests, a stationary drone can also view an adjacent segment when the mapped positions are within 25 m and share an endpoint. This is a synthetic camera-reach assumption, with no validated line of sight or electrical connectivity. The drone stays at its attached line and can keep charging; its four contact telemetry channels never transfer to the adjacent target. Imagery without fresh target telemetry leaves the target Unknown and prompts human coverage follow-up. Relocation respects the 30-minute flight limit, forecast hazard windows, reserved destinations and a full 180-minute recharge after arrival; perched sensing continues while charging. Unavailable targets and delayed inspections retain an explicit reason, and bounded waits can create human requests. Critical evidence can bypass an additional inspection and request immediate human review. LINE_024 remains known de-energized, with damage unknown. Optional payload budget is 200 g allocated + 50 g reserve, including integration; no hardware or flight-performance validation is implied.
 
 The user reports a maximum drone speed of **60 m/s (216 km/h)**. Cruise choices of **20 m/s routine, 40 m/s high priority and 60 m/s critical** are demonstration policy assumptions, rather than measured optimal speeds. The interface shows the selected speed and its travel/measurement tradeoff. High-speed transit measurements are unsuitable for reliable line-state inference; transit channels are excluded from the BN, which uses stationary observation and inspection. The maximum speed does not override weather constraints, the 30-minute flight limit or the 180-minute recharge.
 

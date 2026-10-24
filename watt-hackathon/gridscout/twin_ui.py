@@ -48,6 +48,28 @@ def _risk_color(info):
     return "#ff8192" if p > .65 else "#f1bf6a" if p > .2 else ACCENT
 
 
+def _drone_label_offsets(sim):
+    """Separate screen-space labels while retaining the true marker positions."""
+    points = [row["position"] for row in sim.dataset.segments.values()]
+    west, east = min(p[0] for p in points), max(p[0] for p in points)
+    south, north = min(p[1] for p in points), max(p[1] for p in points)
+    project = lambda p: ((p[0] - west) / max(east - west, 1e-9) * 860,
+                         (north - p[1]) / max(north - south, 1e-9) * 420)
+    markers = [project(sim.position(drone)) for drone in sim.drones]
+    occupied, offsets = [], {}
+    for drone, (x, y) in zip(sim.drones, markers):
+        for dx, dy in [(0,-28),(0,28),(42,-28),(-42,-28),(42,28),(-42,28),(70,0),(-70,0)]:
+            box = (x+dx-18, y+dy-10, x+dx+18, y+dy+10)
+            overlaps = lambda other: (box[0] < other[2]+6 and box[2]+6 > other[0]
+                                      and box[1] < other[3]+6 and box[3]+6 > other[1])
+            if not any(overlaps(other) for other in occupied) and not any(
+                    overlaps((mx-8,my-8,mx+8,my+8)) for mx,my in markers):
+                break
+        occupied.append(box)
+        offsets[drone.sensor_id] = (dx, dy)
+    return offsets
+
+
 def twin_map(sim, selected):
     fig = go.Figure()
     for warning in sim.weather.get("warnings", []):
@@ -76,6 +98,7 @@ def twin_map(sim, selected):
     point=sim.dataset.segments["LINE_024"]["position"]
     fig.add_trace(go.Scatter(x=[point[0]],y=[point[1]],mode="markers",name="Known de-energized",
         marker=dict(symbol="x",size=13,color="#d18dbf"),hovertemplate="LINE_024: de-energized; damage unknown<extra></extra>"))
+    label_offsets = _drone_label_offsets(sim)
     for drone in sim.drones:
         point=sim.position(drone)
         if drone.status == "flying" and drone.target_asset:
@@ -87,11 +110,15 @@ def twin_map(sim, selected):
                 line=dict(color=ACCENT,width=4),showlegend=False,hoverinfo="skip"))
             fig.add_annotation(x=dest[0],y=dest[1],ax=point[0],ay=point[1],xref="x",yref="y",
                 axref="x",ayref="y",showarrow=True,arrowhead=3,arrowwidth=2,arrowcolor="#d7e7ff")
-        fig.add_trace(go.Scatter(x=[point[0]],y=[point[1]],mode="markers+text",
+        fig.add_trace(go.Scatter(x=[point[0]],y=[point[1]],mode="markers",
             marker=dict(symbol="diamond",size=14,color="#f0f6ff",line=dict(color="#122037",width=2)),
-            text=[drone.sensor_id.replace("Drone ","D")],textposition="top center",
             name=drone.sensor_id,showlegend=False,
             hovertemplate=f"{drone.sensor_id}<br>{drone.asset_id} · {drone.status}<extra></extra>"))
+        dx,dy=label_offsets[drone.sensor_id]
+        fig.add_annotation(x=point[0],y=point[1],xref="x",yref="y",ax=dx,ay=dy,
+            axref="pixel",ayref="pixel",text=drone.sensor_id.replace("Drone ","D"),
+            showarrow=True,arrowhead=0,arrowwidth=1,arrowcolor="#9eb2cb",
+            bgcolor=BG,bordercolor="#698dbb",borderpad=3,font=dict(color="#f0f6ff",size=11))
     for op in _operations(sim):
         if op.get("status") not in {"queued","deferred","inspecting"}:
             continue
@@ -240,8 +267,10 @@ def _task_card(op, minute):
     with st.container(border=True):
         st.markdown(f"**{op['asset_id']} · {STAGE_LABELS.get(op.get('status'),op.get('status','Queued'))}**")
         drone=op.get("sensor_id") or "Awaiting assignment"
-        route=f"{op.get('origin_asset')} → {op['asset_id']}" if op.get("origin_asset") and op["origin_asset"]!=op["asset_id"] else "On-site check · no flight needed"
+        route=_inspection_location(op)
         st.caption(f"{drone} · {route}")
+        if _nearby_inspection(op):
+            st.caption(_nearby_scope(op))
         explanation=op.get("decision_explanation") or {}
         if explanation.get("why_drone"):
             st.caption(str(explanation["why_drone"]))
@@ -257,6 +286,30 @@ def _task_card(op, minute):
             st.write(explanation.get("why_location") or op.get("selection_reason",op.get("reason","")))
         if op.get("status")=="deferred":
             st.caption("Re-evaluated every exercise minute; delays can trigger an operator request.")
+
+
+def _nearby_inspection(op):
+    return (op.get("inspection_access") or {}).get("mode",op.get("observation_mode"))=="nearby_stationary"
+
+
+def _inspection_location(op):
+    access=op.get("inspection_access") or {}
+    if _nearby_inspection(op):
+        origin=access.get("observer_asset_id",op.get("origin_asset"))
+        distance=access.get("distance_m")
+        reach=f" · {distance:.1f} m" if distance is not None else ""
+        return f"Stationary RGB view of {op['asset_id']} from {origin}{reach} · no flight"
+    return (f"{op.get('origin_asset')} → {op['asset_id']}" if op.get("origin_asset")
+            and op["origin_asset"]!=op["asset_id"] else "On-site check · no flight needed")
+
+
+def _nearby_scope(op):
+    access=op.get("inspection_access") or {}
+    origin=access.get("observer_asset_id",op.get("origin_asset"))
+    return (f"Synthetic camera reach: shared endpoint within {access.get('radius_m',25):g} m. "
+            f"Charging and four-channel contact telemetry stay at {origin}. "
+            + ("Target telemetry is available from a separate attached device." if access.get("target_telemetry_available") else
+               "No target telemetry: imagery alone leaves the target assessment Unknown; human follow-up remains required."))
 
 
 def _fleet_cards(sim):
@@ -278,6 +331,9 @@ def _fleet_cards(sim):
             if not op and drone.status=="perched":status="Monitoring"
             if op and op.get("status")=="inspecting":
                 detail=f"Result in {max(0,(op.get('inspection_due_at') or sim.minute)-sim.minute)} min" + (f" · recharge {wait:g} min" if drone.needs_charge else "")
+                if _nearby_inspection(op):
+                    place=f"{drone.asset_id} · viewing {op['asset_id']}"
+                    status="Stationary RGB inspection"
         quality=("Transit data degraded · inspect after landing" if drone.status=="flying" else
                  "No current asset reading" if current.get("anomaly") is None else current.get("status","Unknown"))
         color="#75a9ff" if drone.status=="flying" else ACCENT if op and op.get("status")=="inspecting" else "#9eb2cb"
@@ -301,6 +357,9 @@ def _selected_summary(sim, selected):
     if tasks:
         op=tasks[-1]
         st.write(f"**System action:** {STAGE_LABELS.get(op['status'],op['status'])}")
+        if _nearby_inspection(op):
+            st.caption(_inspection_location(op))
+            st.caption(_nearby_scope(op))
         st.caption(op.get("selection_reason",op.get("reason","")))
         if op.get("result"):
             st.write(f"Inspection at T+{op.get('completed_at')}: **{op['result']}**")
@@ -359,8 +418,11 @@ def _explain_assignment(sim):
         location.write(explanation.get("why_location") or op.get("selection_reason",op.get("reason","")))
         drone.markdown("**Why this drone**")
         drone.write(explanation.get("why_drone") or "Assignment is being evaluated against all five drones.")
+        if _nearby_inspection(op):
+            drone.caption(_inspection_location(op))
+            drone.caption(_nearby_scope(op))
         speed=op.get("flight_speed_mps")
-        if speed:
+        if speed and not _nearby_inspection(op):
             drone.caption(f"Transit {speed:g} m/s · maximum 60 m/s. Stable inspection is collected after arrival.")
         findings.markdown("**Finding → next action**")
         if op.get("result"):
@@ -388,6 +450,7 @@ def _explain_assignment(sim):
                     duration=row.get("flight_minutes")
                     score=row.get("score")
                     rows.append({"Drone":row.get("sensor_id"),"From":row.get("origin_asset"),
+                        "Observation":str(row.get("observation_mode","flight")).replace("_"," "),
                         "Eligible":bool(row.get("eligible")),"Flight min":"—" if duration is None else f"{duration:g}",
                         "Ready at":"—" if row.get("ready_at") is None else f"T+{row['ready_at']:g}",
                         "Transit m/s":f"{row.get('flight_speed_mps',0):g}",
@@ -534,7 +597,7 @@ def render_twin():
                 st.plotly_chart(signal_chart(sim,selected),use_container_width=True,key="tw_signals")
                 if info.get("evidence"):st.dataframe(pd.DataFrame(info["evidence"]),use_container_width=True,hide_index=True)
                 if info.get("missing"):st.warning("Missing or unusable evidence: "+", ".join(map(str,info["missing"])))
-            else:st.info("This asset has no direct observation. Relocate a device to an eligible site to collect evidence.")
+            else:st.info("This asset has no direct telemetry. Nearby RGB imagery does not supply temperature, vibration, voltage or tilt readings. A device attached to the target is required for those measurements.")
         with network:
             render_probability_explanation(sim,selected)
             st.divider()

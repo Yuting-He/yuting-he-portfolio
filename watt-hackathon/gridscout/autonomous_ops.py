@@ -24,6 +24,14 @@ CLEAR_WINDOWS = 5
 TERMINAL = {"completed", "cancelled", "superseded"}
 
 
+def _requires_target_telemetry(observation_need):
+    """Only an explicit camera-only request may omit target contact telemetry."""
+    imagery_only = {"imagery", "imagery only", "rgb imagery", "thermal imagery", "combined imagery",
+                    "stationary imagery", "stationary rgb imagery", "stationary thermal imagery",
+                    "stationary combined imagery"}
+    return " ".join(str(observation_need).lower().split()) not in imagery_only
+
+
 class AutonomousOperations:
     def __init__(self, simulation):
         self.sim = simulation
@@ -59,6 +67,7 @@ class AutonomousOperations:
                      "progress": 0.0, "eta_minutes": None, "stages": [],
                      "synthetic": True, "incident_id": f"incident:{asset}" if kind == "anomaly_check" else None,
                      "inspection_capability": "Assumed optional imagery emulator",
+                     "observation_need": "Stationary imagery and four-channel telemetry", "requires_target_telemetry": True,
                      "posterior_before": None, "posterior_after": None,
                      "human_alert_id": None, "decision_explanation": {},
                      "finding": "Awaiting inspection evidence", "next_action": "Await constrained assignment",
@@ -269,6 +278,9 @@ class AutonomousOperations:
             if existing and existing["status"] in {"flying", "inspecting"}:
                 existing["request_update"] = deepcopy(request)
                 existing["next_action"] = "Finish committed leg safely; reassess the received request revision on arrival."
+                if not cancelled and existing["asset_id"] == request["asset_id"]:
+                    existing.update(observation_need=request["observation_need"],
+                                    requires_target_telemetry=_requires_target_telemetry(request["observation_need"]))
                 if cancelled or existing["asset_id"] != request["asset_id"]:
                     existing["withdrawn_while_committed"] = True
                 if not cancelled and existing["asset_id"] != request["asset_id"]:
@@ -285,13 +297,18 @@ class AutonomousOperations:
                 continue
             if existing:
                 existing.update(priority=request["priority"], selection_reason=request["reason"],
+                                observation_need=request["observation_need"],
+                                requires_target_telemetry=_requires_target_telemetry(request["observation_need"]),
                                 deadline_at=request.get("deadline_at", existing["deadline_at"]))
                 continue
-            operation = self._active_for(request["asset_id"])
-            if operation is None:
-                operation = self._new_operation("report_check", request["asset_id"], None,
-                    request["reason"], request["priority"], request.get("deadline_at", min(239, self.sim.minute + 35)))
+            # Different request lifecycles retain their own observation scope.
+            # Reusing an internal coverage task here would let an imagery-only
+            # report silently erase its stronger contact-telemetry requirement.
+            operation = self._new_operation("report_check", request["asset_id"], None,
+                request["reason"], request["priority"], request.get("deadline_at", min(239, self.sim.minute + 35)))
             operation.update(request_id=identifier, request_source=request["source"],
+                             observation_need=request["observation_need"],
+                             requires_target_telemetry=_requires_target_telemetry(request["observation_need"]),
                              related_asset_id=request.get("related_asset_id"), report_group=request.get("report_group"),
                              hold_for_inspection_asset=request.get("hold_for_inspection_asset"),
                              expires_at=request.get("expires_at"))
@@ -328,12 +345,14 @@ class AutonomousOperations:
         dependency_view = next((o for o in reversed(self.operations) if o["asset_id"] == dependency and o["status"] == "completed"), None)
         waiting_for_view = dependency and (dependency_view is None or self.sim.minute - dependency_view["completed_at"] > 20)
         for drone in self.sim.drones:
-            local = drone.status != "flying" and drone.asset_id == asset
+            access = self.sim.stationary_inspection_access(drone, asset)
+            local = access["eligible"] and (not operation.get("requires_target_telemetry")
+                                            or access["mode"] == "on_site" or access["target_telemetry_available"])
             busy = next((o for o in self.operations if o is not operation and o["sensor_id"] == drone.sensor_id and o["status"] in {"flying", "inspecting"}), None)
             coverage = 0 if local else (25 if drone.sensor_id in sentinel_ids else 0) + max(0, self.sim.dataset.segments[drone.asset_id]["report_log_odds"]) * 2
             distance = haversine_km(self.sim.dataset.segments[drone.asset_id]["position"], self.sim.dataset.segments[asset]["position"])
             minutes = 0 if local else max(1, math.ceil(distance / (preferred*.06)))
-            reason = "On site; retain coverage and inspect while stationary, including during recharge." if local else "Eligible within weather, route, charging and mission constraints."
+            reason = access["reason"] if local else "Eligible within weather, route, charging and mission constraints."
             eligible = True
             speed = preferred
             if waiting_for_view:
@@ -377,7 +396,12 @@ class AutonomousOperations:
                 "flight_speed_mps": 0 if local else speed, "ready_at": ready, "eta_at": self.sim.minute + minutes if eligible else None,
                 "flight_ready_at": flight_ready,
                 "score": round(score, 3), "reason": reason, "origin_asset": drone.asset_id,
-                "coverage_penalty": round(coverage, 2), "observation_need": "Four-minute stationary imagery plus four-channel telemetry; transit motion excluded"})
+                "coverage_penalty": round(coverage, 2),
+                "observation_mode": access["mode"] if local else "flight",
+                "observation_distance_m": access["distance_m"], "inspection_access": access,
+                "observation_need": ("Four-minute stationary imagery only; attached-asset contact telemetry is not target telemetry"
+                                     if local and access["mode"] == "nearby_stationary" else
+                                     "Four-minute stationary imagery plus four-channel telemetry; transit motion excluded")})
         return rows
 
     def _replan(self, trigger):
@@ -406,6 +430,7 @@ class AutonomousOperations:
                          if eligible else f"No drone can launch now. {drone.sensor_id} retained as a provisional assignment: {selected['reason']}")
             operation.update(sensor_id=drone.sensor_id, origin_asset=drone.asset_id,
                 dispatch_speed_mps=selected["flight_speed_mps"], priority_score=round(priority, 2),
+                observation_mode=selected["observation_mode"], observation_distance_m=selected["observation_distance_m"],
                 assignment_eligible=bool(eligible),
                 decision_explanation={"why_location": why_location, "why_drone": why_drone,
                     "candidates": rows, "alternatives": [r for r in rows if r["sensor_id"] != drone.sensor_id],
@@ -465,27 +490,40 @@ class AutonomousOperations:
             last = self._last_visit.get(asset, -100)
             if self.sim.minute - last < 60:
                 continue
-            probe = {"asset_id": asset, "priority": "routine", "sensor_id": None}
+            probe = {"asset_id": asset, "priority": "routine", "sensor_id": None, "requires_target_telemetry": True}
             rows = self._candidates(probe)
-            if any(r["eligible"] for r in rows):
+            # This review restores an asset's stationary telemetry coverage.
+            # A nearby camera view alone cannot provide that contact stream;
+            # explicit imagery requests can still use the nearby observer.
+            if any(r["eligible"] and r["observation_mode"] != "nearby_stationary" for r in rows):
                 candidates.append((self.sim.dataset.segments[asset]["report_log_odds"], self.sim.minute-last, asset))
         if candidates:
             _, _, asset = max(candidates)
-            self._new_operation("report_check", asset, None,
+            operation = self._new_operation("report_check", asset, None,
                 "Periodic coverage review: collect a fresh stationary view at a report-linked site.",
                 "routine", min(239, self.sim.minute+35))
+            operation["requires_target_telemetry"] = True
             self._last_visit[asset] = self.sim.minute
 
     def _start_inspection(self, operation, drone):
         if self.sim.minute + INSPECTION_MINUTES > 240:
             self._stage(operation, "deferred", "Insufficient mission time to complete the assumed four-minute inspection.")
             return
+        try:
+            access = self.sim.validate_stationary_inspection(operation)
+        except ValueError as error:
+            self._stage(operation, "deferred", str(error))
+            return
         operation.update(inspection_started_at=self.sim.minute,
                          inspection_due_at=self.sim.minute + INSPECTION_MINUTES,
-                         posterior_at_start=self.sim.current(operation["asset_id"])["anomaly"])
+                         posterior_at_start=self.sim.current(operation["asset_id"])["anomaly"],
+                         inspection_access=access, observation_mode=access["mode"],
+                         observation_distance_m=access["distance_m"])
+        if drone.asset_id != operation["asset_id"]:
+            operation.update(flight_minutes=0, flight_speed_mps=0.0)
         if operation["started_at"] is None:
             operation["started_at"] = self.sim.minute
-        self._stage(operation, "inspecting", "Stationary synthetic imagery collection and analysis in progress; charging can continue.")
+        self._stage(operation, "inspecting", f"Stationary synthetic imagery collection and analysis in progress; {access['reason']}")
 
     def _finish_inspection(self, operation):
         # Compare before/after against the same received telemetry window.
@@ -497,7 +535,8 @@ class AutonomousOperations:
                          eta_minutes=0, outcome=("Human action required" if assessment.get("urgent") or self.sim.recommendations[operation["asset_id"]][0]["action"] == "field_check"
                                                 else "Continue monitoring; current evidence supports a normal assessment" if assessment["status"] == "Normal"
                                                 else "Unresolved; bounded follow-up"))
-        self._last_visit[operation["asset_id"]] = self.sim.minute
+        if assessment["status"] != "Unknown":
+            self._last_visit[operation["asset_id"]] = self.sim.minute
         signal = self._signals.get(operation["asset_id"])
         if signal:
             signal["last_check"] = self.sim.minute
@@ -508,7 +547,17 @@ class AutonomousOperations:
                "The view supports abnormality within the selected modality's coverage." if observation["result"] == "supports" else
                "The view is clear within the selected modality's coverage."))
         operation["next_action"] = "Operator: review evidence and arrange field inspection; decide repair separately." if operation["human_required"] else "Replan pending work; continue monitoring and bounded follow-up if ambiguity remains."
-        self._stage(operation, "completed", f"Received {observation['result']} inspection evidence; BN recalculated from current telemetry plus one view.")
+        if assessment["status"] == "Unknown":
+            operation.update(human_required=True, outcome="Imagery collected; target telemetry unavailable and asset assessment remains Unknown",
+                             finding=f"Received an imperfect {observation['result']} target view at T+{self.sim.minute}; target telemetry is unavailable. The asset assessment remains Unknown; the image alone cannot establish that it is healthy or faulty.",
+                             next_action="Operator: review the independent imagery and obtain asset-specific stationary telemetry; retain Unknown until evidence is available.")
+            self._stage(operation, "completed", f"Received {observation['result']} target imagery only; no target telemetry window is available, so no BN update is asserted.")
+            self._alert(operation["asset_id"], "coverage", "high" if observation["result"] == "supports" else "warning",
+                        "Target telemetry unavailable after imagery review",
+                        "Target-specific stationary telemetry is unavailable after the independent imagery check; a clear image does not establish that the target is healthy.",
+                        "Operator: review the imagery and arrange asset-specific telemetry or a field check; the target remains Unknown.", operation)
+        else:
+            self._stage(operation, "completed", f"Received {observation['result']} inspection evidence; BN recalculated from current telemetry plus one view.")
         if assessment.get("urgent") or self.sim.recommendations[operation["asset_id"]][0]["action"] == "field_check":
             self._alert(operation["asset_id"], "asset", "critical" if assessment.get("urgent") else "high",
                         "Field inspection requested", "Current telemetry and inspection evidence support further operator action.",
@@ -521,11 +570,17 @@ class AutonomousOperations:
                 continue
             drone = self.sim._drone(operation["sensor_id"])
             if operation["status"] == "inspecting":
-                if drone.status == "flying" or drone.asset_id != operation["asset_id"]:
+                try:
+                    self.sim.validate_stationary_inspection(operation)
+                except ValueError as error:
+                    operation.setdefault("inspection_attempts", []).append({
+                        "started_at": operation["inspection_started_at"], "aborted_at": self.sim.minute,
+                        "access": operation.pop("inspection_access", None), "reason": str(error)})
                     operation.update(inspection_started_at=None, inspection_due_at=None)
-                    self._stage(operation, "deferred", "Assigned drone left before inspection completed; evidence not collected.")
-                elif self.sim.minute >= operation["inspection_due_at"]:
-                    self._finish_inspection(operation)
+                    self._stage(operation, "deferred", str(error))
+                else:
+                    if self.sim.minute >= operation["inspection_due_at"]:
+                        self._finish_inspection(operation)
             elif operation["status"] == "flying":
                 if drone.status != "flying" and drone.asset_id == operation["asset_id"]:
                     assessment = self.sim.current(operation["asset_id"])
@@ -544,7 +599,9 @@ class AutonomousOperations:
                     self._stage(operation, "deferred", "Assigned drone is completing another operation; replan pending work.")
                 elif operation.get("hold_for_inspection_asset") and not any(o["asset_id"] == operation["hold_for_inspection_asset"] and o["status"] == "completed" and self.sim.minute-o["completed_at"] <= 20 for o in self.operations):
                     self._stage(operation, "deferred", "Await the inspection result required by the received follow-up request.")
-                elif drone.status != "flying" and drone.asset_id == operation["asset_id"]:
+                elif (self.sim.stationary_inspection_access(drone, operation["asset_id"])["eligible"]
+                      and (not operation.get("requires_target_telemetry") or drone.asset_id == operation["asset_id"]
+                           or self.sim.stationary_inspection_access(drone, operation["asset_id"])["target_telemetry_available"])):
                     self._start_inspection(operation, drone)
                 elif drone.status == "flying":
                     self._stage(operation, "deferred", "Assigned drone is on another flight; wait for arrival.")
