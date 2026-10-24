@@ -1,0 +1,16 @@
+{
+  "hazard": "Storm",
+  "severity": "High",
+  "sensor_count": 2,
+  "mission_minutes": 90.0,
+  "sensitivity": 0.9,
+  "specificity": 0.94,
+  "information_weight": 0.35,
+  "decision_weight": 0.25,
+  "seed": 42,
+  "endurance_minutes": 100.0,
+  "speed_km_per_minute": 0.6,
+  "demand_weight": 0.5,
+  "customer_weight": 0.3,
+  "critical_weight": 0.2
+}

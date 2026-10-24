@@ -1,0 +1,406 @@
+{
+  "metadata": {
+    "title": "GridScout stationary synthetic snapshot validation",
+    "synthetic": true,
+    "model_version": "window-bn-2.0-synthetic",
+    "minute": 55,
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46,
+      47
+    ],
+    "scenarios": {
+      "normal": "Normal operation · healthy",
+      "gusts": "Strong gusts · no injected damage",
+      "mechanical": "Persistent mechanical anomaly after gusts",
+      "thermal": "Thermal anomaly with normal load variation",
+      "dropout": "Communication loss on Drone 5",
+      "drift": "Measurement drift on Drone 1"
+    },
+    "anomaly_threshold": 0.65,
+    "sensor_threshold": 0.25,
+    "high_cost_action_names": [
+      "field_check",
+      "urgent_review"
+    ],
+    "costs": {
+      "field_check": 16.0,
+      "false_positive": 24.0,
+      "missed_event": 180.0,
+      "residual_event": 4.0,
+      "remote_review": 3.0,
+      "inspect_sensor": 2.0,
+      "waiting_per_minute": 0.4,
+      "unresolved_sensor": 12.0,
+      "unknown_coverage": 10.0,
+      "remote_sensitivity": 0.85,
+      "remote_specificity": 0.92,
+      "sensor_sensitivity": 0.9,
+      "sensor_specificity": 0.9,
+      "sensor_resolution": 0.9,
+      "urgent_review": 1.0,
+      "critical_missed_event": 1200.0
+    },
+    "executed_optional_actions": 0,
+    "protocol": "Matched seeds across six scenarios; five fixed occupied assets; passive telemetry collection to one evaluation timestamp.",
+    "denominators": "Confusion matrices use observed stationed slots. Missing stationed slots and their hidden labels have separate counts. The scoring population is the five stationed assets.",
+    "assumptions": [
+      "Probability calibration status: synthetic demonstration parameters.",
+      "Independent healthy synthetic history fits the frozen conditional baseline; generator and fault models are exercise assumptions.",
+      "The evaluator reads fault labels after inference and action recommendations to score the resulting predictions.",
+      "Each run scores the current assessment at one evaluation timestamp.",
+      "Expected loss values use hypothetical relative cost units.",
+      "Results describe model responses to the configured synthetic fault and observation generators.",
+      "Matched synthetic samples provide descriptive comparisons across scenarios and seeds."
+    ],
+    "code_hash": "a67449de8c79a23dc884d3ea1931cb38e4815db2ad684b6ea3a57d6bc7abbc12",
+    "baseline_versions": [
+      "healthy-synthetic-v1-1d69fe0f96",
+      "healthy-synthetic-v1-7c71239a7a",
+      "healthy-synthetic-v1-8d60d34d30",
+      "healthy-synthetic-v1-a9688edd95",
+      "healthy-synthetic-v1-e5ed9586fc",
+      "healthy-synthetic-v1-e91030468e"
+    ],
+    "scope": "Six synthetic scenarios, matched seeds 42–47, five stationed slots per run at T+55. No dynamic mission or field-performance claim.",
+    "calibration_status": "Not calibrated against field observations",
+    "generated_by": "python -m gridscout.showcase_data"
+  },
+  "overall": {
+    "counts": {
+      "stationed_samples": 180,
+      "observed": 174,
+      "partial_observations": 0,
+      "missing": 6,
+      "asset_positive_all_samples": 12,
+      "asset_negative_all_samples": 168,
+      "asset_positive_missing": 0,
+      "asset_negative_missing": 6,
+      "drift_positive_all_samples": 6
+    },
+    "asset_detection": {
+      "denominator_observed": 174,
+      "confusion": {
+        "true_positive": 12,
+        "false_positive": 0,
+        "true_negative": 162,
+        "false_negative": 0
+      }
+    },
+    "high_cost_recommendations": {
+      "denominator_observed": 174,
+      "confusion": {
+        "true_positive": 12,
+        "false_positive": 0,
+        "true_negative": 162,
+        "false_negative": 0
+      },
+      "recommended_total": 12,
+      "recommended_with_missing_evidence": 0,
+      "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+    },
+    "sensor_drift_detection": {
+      "denominator_observed": 174,
+      "confusion": {
+        "true_positive": 1,
+        "false_positive": 1,
+        "true_negative": 167,
+        "false_negative": 5
+      },
+      "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+    }
+  },
+  "scenarios": [
+    {
+      "scenario": "normal",
+      "label": "Normal operation · healthy",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 30,
+          "partial_observations": 0,
+          "missing": 0,
+          "asset_positive_all_samples": 0,
+          "asset_negative_all_samples": 30,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 0,
+          "drift_positive_all_samples": 0
+        },
+        "asset_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "recommended_total": 0,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    },
+    {
+      "scenario": "gusts",
+      "label": "Strong gusts · no injected damage",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 30,
+          "partial_observations": 0,
+          "missing": 0,
+          "asset_positive_all_samples": 0,
+          "asset_negative_all_samples": 30,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 0,
+          "drift_positive_all_samples": 0
+        },
+        "asset_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "recommended_total": 0,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    },
+    {
+      "scenario": "mechanical",
+      "label": "Persistent mechanical anomaly after gusts",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 30,
+          "partial_observations": 0,
+          "missing": 0,
+          "asset_positive_all_samples": 6,
+          "asset_negative_all_samples": 24,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 0,
+          "drift_positive_all_samples": 0
+        },
+        "asset_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 6,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 6,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          },
+          "recommended_total": 6,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 1,
+            "true_negative": 29,
+            "false_negative": 0
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    },
+    {
+      "scenario": "thermal",
+      "label": "Thermal anomaly with normal load variation",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 30,
+          "partial_observations": 0,
+          "missing": 0,
+          "asset_positive_all_samples": 6,
+          "asset_negative_all_samples": 24,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 0,
+          "drift_positive_all_samples": 0
+        },
+        "asset_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 6,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 6,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          },
+          "recommended_total": 6,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    },
+    {
+      "scenario": "dropout",
+      "label": "Communication loss on Drone 5",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 24,
+          "partial_observations": 0,
+          "missing": 6,
+          "asset_positive_all_samples": 0,
+          "asset_negative_all_samples": 30,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 6,
+          "drift_positive_all_samples": 0
+        },
+        "asset_detection": {
+          "denominator_observed": 24,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 24,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          },
+          "recommended_total": 0,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 24,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 0
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    },
+    {
+      "scenario": "drift",
+      "label": "Measurement drift on Drone 1",
+      "summary": {
+        "counts": {
+          "stationed_samples": 30,
+          "observed": 30,
+          "partial_observations": 0,
+          "missing": 0,
+          "asset_positive_all_samples": 0,
+          "asset_negative_all_samples": 30,
+          "asset_positive_missing": 0,
+          "asset_negative_missing": 0,
+          "drift_positive_all_samples": 6
+        },
+        "asset_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          }
+        },
+        "high_cost_recommendations": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 0,
+            "false_positive": 0,
+            "true_negative": 30,
+            "false_negative": 0
+          },
+          "recommended_total": 0,
+          "recommended_with_missing_evidence": 0,
+          "interpretation": "Action recommendations at the evaluation snapshot, scored using hypothetical loss units."
+        },
+        "sensor_drift_detection": {
+          "denominator_observed": 30,
+          "confusion": {
+            "true_positive": 1,
+            "false_positive": 0,
+            "true_negative": 24,
+            "false_negative": 5
+          },
+          "interpretation": "Sensor/installation posterior evaluated against the injected measurement-drift label."
+        }
+      }
+    }
+  ]
+}

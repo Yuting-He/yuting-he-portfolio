@@ -1,0 +1,9 @@
+[project]
+name = "gridscout"
+version = "3.0.0"
+description = "Synthetic streaming grid twin with Bayesian evidence and cost-sensitive inspection decisions"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

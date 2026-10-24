@@ -1,0 +1,17 @@
+{
+  "source_page": "https://app.notion.com/p/nomadicdrone/Nomadic-Challenge-Keeping-the-Power-Flowing-400b293a19d8818fb466caf01a743ed6",
+  "source_archive": "participant_package.zip",
+  "archive_sha256": "c1fe2b9a1ae9c7db642f09fe2440a3c807a60cdba7e6a3625dc842b765900a32",
+  "imported_on": "2026-10-24",
+  "files": {
+    "grid_segments.geojson": "dc35010f96771be122d4a38d857931c9e9b47bef89f9cf57efa548afab7d64bb",
+    "grid_nodes.geojson": "e2b3b16a09ff04986a099a8fda04682146d8b0abc5a8546da0c23c75cb337728",
+    "grid_segments.csv": "ebbbdfd8be3c3a6e0d000ef136e582bce3cbad8d6e9f36f62e7417d12f1c9323",
+    "grid_nodes.csv": "08a230bf1b4dc233ed21b6be097b5034ff51d881e9608ceaef52049a87d9bf12",
+    "scenario_public_config.json": "901c2b6ca85fe4b16937decd346adae26bd60f6553aaa38f115ff13a863c63b1",
+    "README.md": "d2dcd51110b8f5bdd8fe1ad29fbf750490767111f8d66b726f0be0bef6c44d76",
+    "initial_information.csv": "b3e4761f45b0a40b63e028c0784733e706ba343bff8d41323f7867ae4a686a98",
+    "scenario_context.geojson": "56a359e668f6189ac1cb91de3ca621c2b7d3a9151db533026f7732dec12251d9",
+    "network_map.png": "9047f66bbf28225ab9e26e18f85f95cf7d8e6f3a0f33e09cd5cc8a8be2576989"
+  }
+}
