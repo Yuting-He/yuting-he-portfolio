@@ -14,8 +14,15 @@ export const VERIFIED_FRONTEND_FILES = Object.freeze([
   "heatwave-controls.js", "heatwave-spatial.js", "heatwave-results.js", "heatwave-i18n.js",
   "heatwave-language.js", "heatwave-language-de.js", "heatwave-demo.css", "styles.css"
 ]);
+export const VERIFIED_BINARY_FILES = Object.freeze([
+  "assets/portfolio/hero-desktop.webp", "assets/portfolio/hero-mobile.webp",
+  "assets/portfolio/heatlens-workbench.webp", "assets/portfolio/heatlens-workbench-small.webp",
+  "assets/portfolio/gridscout-replay.webp", "assets/portfolio/gridscout-replay-small.webp",
+  "assets/Yuting_He_CV.pdf"
+]);
 const PAGES = ["index.html", "heatwave-demo.html", "watt-hackathon/index.html", "watt-hackathon/schedule.html"];
 const digestText = (text) => createHash("sha256").update(text.replaceAll("\r\n", "\n")).digest("hex");
+const digestBytes = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const fail = (message, { retryable = false, code = "INVALID_DEPLOYMENT" } = {}) => Object.assign(new Error(message), { retryable, code });
 
 function verifyForecast(dataset, manifest, now) {
@@ -111,7 +118,7 @@ export async function verifyLiveSite({
         if (info.snapshotId !== manifest.snapshotId || info.snapshotGeneratedAt !== manifest.generatedAt ||
             info.modelVersion !== manifest.modelVersion) throw fail("Published build-info and manifest describe different snapshots");
         const stateId = Object.hasOwn(manifest.states, "DE2") ? "DE2" : Object.keys(manifest.states).sort()[0];
-        const [bundle, dataset, files] = await Promise.all([
+        const [bundle, dataset, files, binaryFiles] = await Promise.all([
           client.loadState(stateId, manifest),
           checkedFetch("assets/live/forecast.json").then((response) => response.json()),
           Promise.all([...PAGES, ...VERIFIED_FRONTEND_FILES].map(async (path) => {
@@ -121,6 +128,19 @@ export async function verifyLiveSite({
             if (digestText(served) !== digestText(local)) throw fail(`Published file differs from checkout ${expectedCommit}: ${path}`, { code: "FILE_MISMATCH" });
             return { path, matchesCheckout: true, sha256: digestText(served), ...(PAGES.includes(path)
               ? { title: served.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? null } : {}) };
+          })),
+          Promise.all(VERIFIED_BINARY_FILES.map(async (path) => {
+            const [served, local] = await Promise.all([
+              checkedFetch(path).then(async (response) => new Uint8Array(await response.arrayBuffer())),
+              readFile(resolve(root, path))
+            ]);
+            // Images and PDFs must retain their exact bytes. UTF-8 decoding or
+            // newline normalization could hide corruption in a binary asset.
+            const sha256 = digestBytes(served);
+            if (served.byteLength !== local.byteLength || sha256 !== digestBytes(local)) {
+              throw fail(`Published binary differs from checkout ${expectedCommit}: ${path}`, { code: "BINARY_MISMATCH" });
+            }
+            return { path, matchesCheckout: true, bytes: served.byteLength, sha256 };
           }))
         ]);
         const freshness = verifyForecast(dataset, manifest, clock());
@@ -142,7 +162,7 @@ export async function verifyLiveSite({
           generatedAt: manifest.generatedAt, publicationMode: info.publicationMode,
           freshnessStatus: stale ? "stale" : freshness.snapshotAgeHours > 18 ? "delayed" : "current",
           freshness, basinCount: basins.length, forecastDates: manifest.forecastDates, representativeState: stateId,
-          overviewIntegrityVerified: true, regionalIntegrityVerified: true, files });
+          overviewIntegrityVerified: true, regionalIntegrityVerified: true, files, binaryFiles });
         break;
       } catch (error) {
         result.status = "failed";

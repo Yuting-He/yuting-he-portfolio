@@ -5,6 +5,13 @@ Personal portfolio for environmental engineering, statistics, geospatial NatCat 
 - Portfolio: <https://yuting-he.github.io/yuting-he-portfolio/>
 - HeatLens: <https://yuting-he.github.io/yuting-he-portfolio/heatwave-demo.html>
 
+## Portfolio presentation
+
+The homepage leads with HeatLens, followed by GridScout, then experience, education, skills and contact. The other three research/workflow projects remain in an expandable reading section; no unavailable demo or source links are implied. Both featured images are real application captures, explicitly saved views rather than a current conditions display. The HeatLens map capture retains OpenStreetMap attribution. Existing portfolio anchors, including the HeatLens return target `index.html#projects`, remain stable.
+
+The existing geospatial hero is served as WebP through a responsive `<picture>`: 219,210 bytes on desktop and 174,692 on mobile, compared with the original 2,753,442-byte PNG. Project screenshots have 720/1280-pixel `srcset` alternatives, fixed aspect ratios and lazy loading. Mobile navigation remains visible without a menu script; anchor offsets, keyboard focus, reduced motion and 360/390/430-pixel layouts are checked in the browser suite. The page adds no JavaScript or external font requests.
+
+The general public CV is `assets/Yuting_He_CV.pdf`, with only the contact channels already shown on the homepage. Degree and experience details come from the existing CV; the expected March 2027 M.Sc. graduation was confirmed directly by Yuting. Rebuild it manually with `python scripts/build-public-cv.py` in an environment with ReportLab, then render and review both pages before replacing the published file. Python is not needed to build or serve the website.
 ## HeatLens capabilities
 
 - live DWD ICON forcing plus ICON-D2/EU/Global daily ensemble means and hourly member standard deviations
