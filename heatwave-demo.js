@@ -459,8 +459,8 @@ function renderSummary() {
         ? "Einige Daten sind für aktuelle Hinweise zu alt. Die Werte bleiben zur Auswertung sichtbar, Handlungsvorschläge pausieren bis zur nächsten gültigen Aktualisierung."
         : "Some data is too old for current advice. Scores remain visible for review, but actions are paused until the next valid update."
       : isGerman()
-        ? "Wetter-, Niederschlags- und Bodenwasserdaten sind für diese Planungsansicht aktuell genug. HeatLens bietet Orientierung, aber keine amtliche Warnung."
-        : "Weather, rain, and soil-water data are current enough for this planning view. HeatLens is guidance, not an official warning."
+        ? "Die Daten sind für diese Planungsansicht aktuell genug. Örtliche Warnungen bei amtlichen Diensten prüfen."
+        : "Inputs are current enough for this planning view. Check official sources for local warnings."
     : state.freshness.stale
     ? state.freshness.sourceStale
       ? isGerman()

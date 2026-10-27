@@ -1395,6 +1395,14 @@ summary::marker { color: var(--teal-dark); }
   footer { flex-direction: column; align-items: start; gap: 8px; font-size: 13px; }
 }
 
+@media (min-width: 981px) {
+  .workbench-toolbar [data-audience] { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 5px 4px; font-size: 11.5px; line-height: 1.2; hyphens: auto; }
+  .map-tools .control-group:first-child .control-buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .map-tools .control-group:last-child .control-buttons { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .map-tools .control-button { overflow-wrap: anywhere; }
+  .workspace-context-row { padding-block: 2px; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; transition: none !important; }
 }
