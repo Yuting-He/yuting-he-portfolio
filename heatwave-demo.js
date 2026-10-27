@@ -5,64 +5,51 @@ import {
   HORTICULTURE_CONTEXTS,
   LAYERS,
   MODEL_VERSION,
-  actionsFor,
-  aggregatePredictions,
-  buildLiveBasinPrediction,
-  evidenceConfidence,
   fillColor,
   freshnessStatus,
   scoreForLayer,
   severity
 } from "./heatwave-model.js";
 import {
-  PLAIN_SOURCE_SUMMARY,
-  plainActionCategory,
-  plainActionsFor,
-  plainConfidenceLabel,
-  plainDecisionNote,
-  plainLanguageSignals,
-  plainLanguageSummary
-} from "./heatwave-language.js";
-import {
-  PLAIN_SOURCE_SUMMARY_DE,
-  plainActionCategoryDe,
-  plainActionsForDe,
-  plainConfidenceLabelDe,
-  plainDecisionNoteDe,
-  plainLanguageSignalsDe,
-  plainLanguageSummaryDe,
-  technicalGuidanceForDe
-} from "./heatwave-language-de.js";
-import {
   LOCALE_CODES,
   applyDocumentLanguage,
-  confidenceLabel,
   profileLabel,
   severityLabel,
   textFor
 } from "./heatwave-i18n.js";
 import {
   DEFAULT_VIEW,
-  isRetrospectiveDate,
   parseViewState,
-  resolveForecastDate,
+  resolveForecastSelection,
   runtimeSourceFreshness,
   serializeViewState
 } from "./heatwave-state.js";
-import { warningContextForState, warningPresentation } from "./heatwave-warnings.js";
+import { warningFeedFreshness } from "./heatwave-warnings.js";
+import { createHeatlensDataClient, matchesDefaultContext } from "./heatwave-data.js";
+import { installLocationSearch } from "./heatwave-controls.js";
+import { createSpatialModel } from "./heatwave-spatial.js";
+import { createResultsView } from "./heatwave-results.js";
 
-const STATE_URL = "./assets/nuts1-de.geojson";
-const DISTRICT_URL = "./assets/nuts3-de.geojson";
-const BASIN_URL = "./assets/hydrobasins-de-level8.geojson";
-const CROSSWALK_URL = "./assets/basin-nuts3-crosswalk.json";
-const LIVE_DATA_URL = "./assets/live/forecast.json";
-const SVG_NS = "http://www.w3.org/2000/svg";
+const dataClient = createHeatlensDataClient();
 const preferredBrowserLanguage = navigator.languages?.[0] || navigator.language || "en";
 const browserLanguage = String(preferredBrowserLanguage).toLowerCase().startsWith("de") ? "de" : "en";
 const initialView = parseViewState(window.location.search, browserLanguage);
 
 const state = {
   ...initialView,
+  manifest: null,
+  overview: null,
+  locations: [],
+  loadedStates: new Set(),
+  loading: false,
+  detailLoading: false,
+  dateAdjustment: null,
+  selectionNotice: false,
+  requestedDate: new URLSearchParams(window.location.search).get("date"),
+  pendingManifest: null,
+  reloadRequired: false,
+  updateStatus: "idle",
+  panel: "results",
   stateFeatures: [],
   districtFeatures: [],
   basinFeatures: [],
@@ -160,21 +147,30 @@ elements.gardenSoilSelect = document.querySelector("#garden-soil");
 elements.gardenGoalSelect = document.querySelector("#garden-goal");
 elements.legendLabels = [...document.querySelectorAll("[data-legend-label]")];
 elements.languageButtons = [...document.querySelectorAll("[data-language]")];
+for (const [name, id] of Object.entries({
+  today: "today-date", dateWindow: "date-window", dateNotice: "requested-date-notice",
+  locationSearch: "location-search", locationResults: "location-results", searchStatus: "location-search-status",
+  breadcrumbs: "scope-breadcrumbs", updateCheck: "snapshot-update-check", updateApply: "snapshot-update-apply",
+  updateStatus: "snapshot-update-status", resultsTab: "results-tab", mapTab: "map-tab",
+  application: "application", settings: "personalisation-settings", settingsSummary: "personalisation-settings-summary",
+  resetSettings: "reset-personalisation", toggleActions: "toggle-actions",
+  filters: "workspace-filters", filterSummary: "workspace-filter-summary", filterContext: "workspace-filter-context"
+})) elements[name] = document.getElementById(id);
+const narrowWorkspace = window.matchMedia("(max-width: 700px)");
+const syncFilterLayout = () => { elements.filters.open = !narrowWorkspace.matches; };
+narrowWorkspace.addEventListener("change", syncFilterLayout);
+syncFilterLayout();
 
 const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 const isGerman = () => state.language === "de";
 const ui = (key, values) => textFor(state.language, key, values);
 const localizedProfile = (group, key, fallback) => profileLabel(state.language, group, key, fallback);
 const localizedSeverity = (level) => severityLabel(state.language, level);
-
-function profileForDistrict(feature) {
-  const name = String(feature.properties.NAME_LATN || feature.properties.NUTS_NAME || "");
-  const city = /Kreisfreie Stadt|Stadtkreis|Berlin|Hamburg|Bremen/i.test(name);
-  return {
-    exposure: city ? 70 : 50,
-    cropSensitivity: city ? 25 : 65
-  };
-}
+const { assignSpatialHierarchy, metricsForUnit } = createSpatialModel({ state, featureId, clamp });
+const { renderDetails, warningContextForUnit, warningContextStatus } = createResultsView({
+  state, elements, isGerman, ui, localizedProfile, localizedSeverity, formatDate, formatTimestamp,
+  featureName, metricsForUnit, selectedUnit, berlinToday, staleSourceNames
+});
 
 function featureId(feature, level) {
   if (level === "basin") return String(feature.properties.HYBAS_ID);
@@ -206,7 +202,7 @@ function freshnessText() {
   if (!Number.isFinite(state.freshness.ageHours)) return isGerman() ? "Quellzeit nicht verfügbar" : "source time unavailable";
   if (state.freshness.ageHours < 1) return isGerman() ? "vor weniger als 1 Stunde aktualisiert" : "updated less than 1 hour ago";
   const hours = Math.floor(state.freshness.ageHours);
-  return isGerman() ? `vor ${hours} Stunden aktualisiert` : `updated ${hours} hours ago`;
+  return isGerman() ? `vor ${hours} ${hours === 1 ? "Stunde" : "Stunden"} aktualisiert` : `updated ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
 }
 
 function updateOperationalFreshness() {
@@ -277,153 +273,6 @@ function validateLivePayload(payload, basinFeatures) {
   return payload;
 }
 
-function addToMap(map, key, value) {
-  if (!map.has(key)) map.set(key, []);
-  map.get(key).push(value);
-}
-
-function assignSpatialHierarchy() {
-  state.districtFeatures.forEach((feature) => {
-    const id = featureId(feature, "district");
-    feature.__centroid = state.d3.geoCentroid(feature);
-    state.districtById.set(id, feature);
-    state.districtProfile.set(id, profileForDistrict(feature));
-  });
-
-  state.basinFeatures.forEach((feature) => {
-    const id = featureId(feature, "basin");
-    feature.__centroid = state.d3.geoCentroid(feature);
-    feature.__districtId = null;
-    feature.__stateId = null;
-    feature.__primaryOverlap = 0;
-    state.basinById.set(id, feature);
-  });
-
-  const districtBasinIds = new Map();
-  const stateBasinIds = new Map();
-  state.crosswalk.forEach((record) => {
-    const basinId = String(record.HYBAS_ID);
-    const districtId = record.NUTS_ID;
-    const stateId = districtId.slice(0, 3);
-    const basin = state.basinById.get(basinId);
-    if (!basin || !state.districtById.has(districtId) || !(record.overlap_km2 > 0)) return;
-    addToMap(state.overlapsByDistrict, districtId, record);
-    addToMap(state.overlapsByState, stateId, record);
-    if (!districtBasinIds.has(districtId)) districtBasinIds.set(districtId, new Set());
-    if (!stateBasinIds.has(stateId)) stateBasinIds.set(stateId, new Set());
-    districtBasinIds.get(districtId).add(basinId);
-    stateBasinIds.get(stateId).add(basinId);
-    if (record.overlap_km2 > basin.__primaryOverlap) {
-      basin.__primaryOverlap = record.overlap_km2;
-      basin.__districtId = districtId;
-      basin.__stateId = stateId;
-    }
-  });
-
-  districtBasinIds.forEach((ids, districtId) => {
-    state.basinsByDistrict.set(districtId, [...ids].map((id) => state.basinById.get(id)));
-  });
-  stateBasinIds.forEach((ids, stateId) => {
-    state.basinsByState.set(stateId, [...ids].map((id) => state.basinById.get(id)));
-  });
-
-  state.districtFeatures.forEach((district) => {
-    const id = featureId(district, "district");
-    if (!state.overlapsByDistrict.has(id)) throw new Error(`No hydrological overlap weights for ${id}`);
-  });
-
-  state.stateFeatures.forEach((feature) => {
-    const id = featureId(feature, "state");
-    state.stateById.set(id, feature);
-    const profiles = state.districtFeatures
-      .filter((district) => featureId(district, "district").startsWith(id))
-      .map((district) => state.districtProfile.get(featureId(district, "district")));
-    const districts = state.districtFeatures.filter((district) => featureId(district, "district").startsWith(id));
-    const weights = districts.map((district) => (state.overlapsByDistrict.get(featureId(district, "district")) || [])
-      .reduce((sum, record) => sum + record.overlap_km2, 0));
-    const totalWeight = weights.reduce((sum, value) => sum + value, 0) || 1;
-    state.stateProfile.set(id, {
-      exposure: profiles.reduce((sum, profile, index) => sum + profile.exposure * weights[index], 0) / totalWeight,
-      cropSensitivity: profiles.reduce((sum, profile, index) => sum + profile.cropSensitivity * weights[index], 0) / totalWeight
-    });
-    if (!state.overlapsByState.has(id)) throw new Error(`No hydrological overlap weights for state ${id}`);
-  });
-}
-
-function predictionsForDate(date) {
-  if (state.predictionCache.has(date)) return state.predictionCache.get(date);
-  const predictions = new Map();
-  state.basinFeatures.forEach((feature) => {
-    const id = featureId(feature, "basin");
-    const day = state.liveByBasin.get(id)?.get(date);
-    if (day) predictions.set(id, buildLiveBasinPrediction({ id, properties: feature.properties }, day));
-  });
-  state.predictionCache.set(date, predictions);
-  return predictions;
-}
-
-function profileForUnit(level, id) {
-  if (level === "district") return state.districtProfile.get(id);
-  if (level === "state") return state.stateProfile.get(id);
-  return { exposure: 48, cropSensitivity: 64 };
-}
-
-function weightedPredictionsForUnit(level, id, date) {
-  const predictionMap = predictionsForDate(date);
-  if (level === "basin") {
-    const prediction = predictionMap.get(id);
-    return prediction ? [prediction] : [];
-  }
-  const records = level === "state" ? state.overlapsByState.get(id) : state.overlapsByDistrict.get(id);
-  return (records || []).flatMap((record) => {
-    const prediction = predictionMap.get(String(record.HYBAS_ID));
-    return prediction ? [{ ...prediction, area: record.overlap_km2 }] : [];
-  });
-}
-
-function metricsForUnit(level, id, date = state.date) {
-  const contextKey = [
-    state.crop, state.stage, state.soil, state.farmGoal,
-    state.plant, state.gardenSetting, state.gardenSoil, state.gardenGoal
-  ].join("|");
-  const cacheKey = `${date}|${state.audience}|${contextKey}|${level}|${id}`;
-  if (state.metricCache.has(cacheKey)) return state.metricCache.get(cacheKey);
-  const predictions = weightedPredictionsForUnit(level, id, date);
-  if (!predictions.length) throw new Error(`No live prediction values for ${level} ${id} on ${date}`);
-  const profile = profileForUnit(level, id);
-  const metrics = aggregatePredictions(predictions, {
-    audience: state.audience,
-    exposure: profile.exposure,
-    cropSensitivity: profile.cropSensitivity,
-    crop: state.crop,
-    stage: state.stage,
-    soil: state.soil,
-    farmGoal: state.farmGoal,
-    plant: state.plant,
-    gardenSetting: state.gardenSetting,
-    gardenSoil: state.gardenSoil,
-    gardenGoal: state.gardenGoal
-  });
-  if (level === "basin") {
-    metrics.spatialCoverage = 100;
-  } else {
-    const records = level === "state" ? state.overlapsByState.get(id) : state.overlapsByDistrict.get(id);
-    const overlapArea = records.reduce((sum, record) => sum + record.overlap_km2, 0);
-    const districtAreas = new Map(records.map((record) => [record.NUTS_ID, record.district_area_km2]));
-    const targetArea = [...districtAreas.values()].reduce((sum, area) => sum + area, 0);
-    metrics.spatialCoverage = Math.round(clamp(overlapArea / targetArea * 100, 0, 100));
-  }
-  metrics.available = metrics.spatialCoverage >= 50 && metrics.completeness >= 85;
-  if (!metrics.available) {
-    metrics.impactScore = Number.NaN;
-    metrics.heatScore = Number.NaN;
-    metrics.dryStressScore = Number.NaN;
-    metrics.wetStressScore = Number.NaN;
-  }
-  state.metricCache.set(cacheKey, metrics);
-  return metrics;
-}
-
 function visibleFeatures() {
   if (state.level === "state") return state.stateFeatures;
   if (state.level === "district") {
@@ -455,7 +304,7 @@ function basinIntersectsDistrict(basinId, districtId) {
 
 function validateSelection() {
   if (!state.stateById.has(state.selectedState)) state.selectedState = DEFAULT_VIEW.selectedState;
-  if (state.selectedDistrict && !state.districtById.has(state.selectedDistrict)) state.selectedDistrict = null;
+  if (state.selectedDistrict && !state.locations.some((item) => item.id === state.selectedDistrict)) state.selectedDistrict = null;
   if (state.selectedBasin && !state.basinById.has(state.selectedBasin)) state.selectedBasin = null;
 
   if (state.selectedBasin) {
@@ -552,6 +401,8 @@ function renderControls() {
   elements.gardenSettingSelect.value = state.gardenSetting;
   elements.gardenSoilSelect.value = state.gardenSoil;
   elements.gardenGoalSelect.value = state.gardenGoal;
+  renderWorkbenchControls();
+  if (state.updateStatus === "applying") setDataControlsDisabled(true);
 }
 
 function renderSummary() {
@@ -575,15 +426,17 @@ function renderSummary() {
     : isGerman() ? "Legende der Risikowerte" : "Risk score legend");
   elements.legendLabels.forEach((label) => {
     const labels = plain ? plainLegendLabels : technicalLegendLabels;
-    label.textContent = labels[label.dataset.legendLabel];
+    label.textContent = label.dataset.legendLabel === "unavailable" && state.level === "state" && !matchesDefaultContext(state)
+      ? isGerman() ? "Region für diese Auswahl laden" : "Load region for this configuration"
+      : labels[label.dataset.legendLabel];
   });
   elements.coverage.textContent = plain
     ? isGerman()
       ? `${state.stateFeatures.length} Bundesländer mit Kreis- und lokaler Detailansicht`
       : `${state.stateFeatures.length} states with district and local detail`
     : isGerman()
-      ? `${state.stateFeatures.length} Bundesländer / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} Einzugsgebiete`
-      : `${state.stateFeatures.length} states / ${state.districtFeatures.length} NUTS-3 / ${state.basinFeatures.length} basins`;
+      ? `${state.stateFeatures.length} Bundesländer / 400 NUTS-3 / ${state.manifest?.basinCount || 614} Einzugsgebiete`
+      : `${state.stateFeatures.length} states / 400 NUTS-3 / ${state.manifest?.basinCount || 614} basins`;
   elements.selectedDateValue.textContent = formatDate(state.date);
   elements.predictionUnit.textContent = plain
     ? isGerman() ? "Lokale Einzugsgebiete" : "Local drainage areas"
@@ -606,8 +459,8 @@ function renderSummary() {
         ? "Einige Daten sind für aktuelle Hinweise zu alt. Die Werte bleiben zur Auswertung sichtbar, Handlungsvorschläge pausieren bis zur nächsten gültigen Aktualisierung."
         : "Some data is too old for current advice. Scores remain visible for review, but actions are paused until the next valid update."
       : isGerman()
-        ? "Wetter-, Niederschlags- und Bodenwasserdaten sind für diese Planungsansicht aktuell genug. HeatLens bietet Orientierung, aber keine amtliche Warnung."
-        : "Weather, rain, and soil-water data are current enough for this planning view. HeatLens is guidance, not an official warning."
+        ? "Die Daten sind für diese Planungsansicht aktuell genug. Örtliche Warnungen bei amtlichen Diensten prüfen."
+        : "Inputs are current enough for this planning view. Check official sources for local warnings."
     : state.freshness.stale
     ? state.freshness.sourceStale
       ? isGerman()
@@ -670,24 +523,12 @@ function updateRegionSelect(features) {
 }
 
 function selectMapUnit(level, id, drill = false) {
-  if (level === "state") {
-    state.selectedState = id;
-    state.selectedDistrict = null;
-    state.selectedBasin = null;
-    if (drill) state.level = "district";
-  } else if (level === "district") {
-    state.selectedDistrict = id;
-    state.selectedState = id.slice(0, 3);
-    state.selectedBasin = null;
-  } else {
-    const basin = state.basinById.get(id);
-    state.selectedBasin = id;
-    if (!basinIntersectsDistrict(id, state.selectedDistrict)) {
-      if (basin.__districtId) state.selectedDistrict = basin.__districtId;
-      if (basin.__stateId) state.selectedState = basin.__stateId;
-    }
-  }
-  renderAll();
+  const patch = level === "state"
+    ? { selectedState: id, selectedDistrict: null, selectedBasin: null, level: drill ? "district" : "state" }
+    : level === "district"
+      ? { selectedState: id.slice(0, 3), selectedDistrict: id, selectedBasin: null, level: "district" }
+      : { selectedBasin: id, level: "basin" };
+  return applyViewPatch(patch);
 }
 
 function initializeMap() {
@@ -743,14 +584,17 @@ function mapStyle(feature) {
 
 function tooltipContent(feature) {
   const id = featureId(feature, state.level);
-  const score = scoreForLayer(metricsForUnit(state.level, id), state.layer);
+  const metrics = metricsForUnit(state.level, id);
+  const score = scoreForLayer(metrics, state.layer);
   const level = severity(score);
   const scoreLabel = Number.isFinite(score) ? score : isGerman() ? "kein Wert" : "no score";
   const content = document.createElement("span");
   const name = document.createElement("strong");
   const detail = document.createElement("span");
   name.textContent = featureName(feature, state.level);
-  detail.textContent = state.detail === "plain"
+  detail.textContent = metrics.pending
+    ? isGerman() ? "Auswählen, um diese Konfiguration zu berechnen." : "Select to calculate this configuration."
+    : state.detail === "plain"
     ? isGerman() ? `Aufmerksamkeit: ${localizedSeverity(level)}` : `${level.label} concern`
     : `${localizedProfile("layers", state.layer, LAYERS[state.layer])}: ${localizedSeverity(level)} ${scoreLabel}`;
   content.append(name, detail);
@@ -774,7 +618,7 @@ function rebuildMapLayers(features, nextFrameKey) {
     onEachFeature: (feature, layer) => {
       const id = featureId(feature, featureLevel);
       layer.bindTooltip(tooltipContent(feature), { className: "heat-map-tooltip", direction: "top", sticky: true });
-      layer.on("click", () => selectMapUnit(featureLevel, id, featureLevel === "state"));
+      layer.on("click", () => selectMapUnit(featureLevel, id));
       state.featureLayers.set(id, layer);
     }
   }).addTo(state.mapInstance);
@@ -849,487 +693,6 @@ function renderMap() {
     : `${LAYERS[state.layer]} for ${formatDate(state.date)}. ${features.length} visible ${unitLabel}.`);
 }
 
-function appendSignal(label, value) {
-  const row = document.createElement("div");
-  row.className = "signal-row";
-  const key = document.createElement("span");
-  key.textContent = label;
-  const data = document.createElement("strong");
-  data.textContent = value;
-  row.append(key, data);
-  return row;
-}
-
-function renderTrend(unit) {
-  const dates = state.availableDates;
-  const values = dates.map((date) => scoreForLayer(metricsForUnit(unit.level, unit.id, date), state.layer));
-  const width = 360;
-  const height = 116;
-  const padding = { left: 25, right: 10, top: 10, bottom: 22 };
-  const x = (index) => padding.left + index * ((width - padding.left - padding.right) / (dates.length - 1));
-  const y = (value) => padding.top + (100 - value) * ((height - padding.top - padding.bottom) / 100);
-  const nodes = [];
-  elements.trendSvgTitle.textContent = isGerman()
-    ? "Screening-Risiko der ausgewählten Region über die verfügbaren Tage"
-    : "Selected region screening risk across available dates";
-
-  if (values.some((value) => !Number.isFinite(value))) {
-    elements.trendLayer.textContent = isGerman() ? "Unzureichende räumliche Abdeckung" : "Insufficient spatial coverage";
-    elements.trendDescription.textContent = isGerman()
-      ? "Es wird kein Verlauf angezeigt, weil weniger als die Hälfte der ausgewählten Region die hinterlegte hydrologische Geometrie schneidet."
-      : "No trend is shown because less than half of the selected region intersects the bundled hydrological geometry.";
-    elements.trend.replaceChildren(elements.trendSvgTitle, elements.trendDescription);
-    return;
-  }
-
-  [35, 55, 75].forEach((value) => {
-    const line = document.createElementNS(SVG_NS, "line");
-    line.setAttribute("x1", padding.left);
-    line.setAttribute("x2", width - padding.right);
-    line.setAttribute("y1", y(value));
-    line.setAttribute("y2", y(value));
-    line.setAttribute("class", "trend-grid");
-    nodes.push(line);
-  });
-
-  const path = document.createElementNS(SVG_NS, "path");
-  path.setAttribute("d", values.map((value, index) => `${index === 0 ? "M" : "L"}${x(index)},${y(value)}`).join(" "));
-  path.setAttribute("class", "trend-line");
-  nodes.push(path);
-
-  values.forEach((value, index) => {
-    const dot = document.createElementNS(SVG_NS, "circle");
-    dot.setAttribute("cx", x(index));
-    dot.setAttribute("cy", y(value));
-    dot.setAttribute("r", dates[index] === state.date ? 4.5 : 3);
-    dot.setAttribute("class", `trend-dot${dates[index] === state.date ? " is-active" : ""}`);
-    const title = document.createElementNS(SVG_NS, "title");
-    title.textContent = state.detail === "plain"
-      ? isGerman()
-        ? `${formatDate(dates[index])}: Aufmerksamkeit ${localizedSeverity(severity(value))}`
-        : `${formatDate(dates[index])}: ${severity(value).label} concern`
-      : `${formatDate(dates[index])}: ${value}`;
-    dot.append(title);
-    nodes.push(dot);
-  });
-
-  [0, dates.indexOf(state.date), dates.length - 1].filter((value, index, array) => value >= 0 && array.indexOf(value) === index).forEach((index) => {
-    const label = document.createElementNS(SVG_NS, "text");
-    label.setAttribute("x", x(index));
-    label.setAttribute("y", height - 5);
-    label.setAttribute("text-anchor", index === 0 ? "start" : index === dates.length - 1 ? "end" : "middle");
-    label.setAttribute("class", "trend-label");
-    label.textContent = dates[index].slice(5).replace("-", "/");
-    nodes.push(label);
-  });
-  elements.trend.replaceChildren(elements.trendSvgTitle, elements.trendDescription, ...nodes);
-  elements.trendLayer.textContent = state.detail === "plain"
-    ? isGerman() ? "Ausgewählte Aufmerksamkeit" : "Selected concern"
-    : localizedProfile("layers", state.layer, LAYERS[state.layer]);
-  elements.trendTitle.textContent = state.detail === "plain"
-    ? isGerman() ? "Wie sich die Situation entwickeln kann" : "How the situation may change"
-    : isGerman() ? `${dates.length}-Tage-Risikoverlauf` : `${dates.length}-day risk profile`;
-  const peak = Math.max(...values);
-  const peakIndex = values.indexOf(peak);
-  const currentIndex = dates.indexOf(state.date);
-  elements.trendDescription.textContent = state.detail === "plain"
-    ? isGerman()
-      ? `Die Aufmerksamkeit reicht von ${localizedSeverity(severity(Math.min(...values))).toLowerCase()} bis ${localizedSeverity(severity(peak)).toLowerCase()}. Der höchste Stand tritt am ${formatDate(dates[peakIndex])} auf; am ausgewählten Datum ist er ${localizedSeverity(severity(values[currentIndex])).toLowerCase()}.`
-      : `Concern ranges from ${severity(Math.min(...values)).label.toLowerCase()} to ${severity(peak).label.toLowerCase()}. The highest level occurs on ${formatDate(dates[peakIndex])}; the selected date is ${severity(values[currentIndex]).label.toLowerCase()}.`
-    : isGerman()
-      ? `${localizedProfile("layers", state.layer, LAYERS[state.layer])} reicht von ${Math.min(...values)} bis ${peak}. Maximum ${peak} am ${formatDate(dates[peakIndex])}; ausgewähltes Datum ${formatDate(state.date)}: ${values[currentIndex]}.`
-      : `${LAYERS[state.layer]} ranges from ${Math.min(...values)} to ${peak}. Peak ${peak} on ${formatDate(dates[peakIndex])}; selected date ${formatDate(state.date)} is ${values[currentIndex]}.`;
-}
-
-function stateIdForUnit(unit) {
-  if (unit.level === "state") return unit.id;
-  if (unit.level === "district") return unit.id.slice(0, 3);
-  return unit.feature.__stateId || state.selectedState;
-}
-
-function warningContextForUnit(unit) {
-  return warningContextForState(state.liveData.warnings, {
-    stateId: stateIdForUnit(unit),
-    unitLevel: unit.level,
-    selectedDate: state.date
-  });
-}
-
-function warningContextStatus(context) {
-  return JSON.stringify([context.freshness.status, context.dateKind, context.actionOptions]);
-}
-
-function renderOfficialWarning(unit) {
-  const context = warningContextForUnit(unit);
-  const stateFeature = state.stateById.get(context.stateId);
-  const presentation = warningPresentation(context, {
-    language: state.language,
-    stateName: stateFeature ? featureName(stateFeature, "state") : context.stateId
-  });
-  state.warningContextStatus = warningContextStatus(context);
-  elements.officialWarningHeading.textContent = presentation.heading;
-  elements.officialWarningContext.replaceChildren(...presentation.shared.map((text) => {
-    const paragraph = document.createElement("p");
-    paragraph.textContent = text;
-    return paragraph;
-  }));
-  elements.officialHeatTitle.textContent = presentation.heat.title;
-  elements.officialHeatDetail.textContent = presentation.heat.detail;
-  elements.officialHeatDetail.hidden = !presentation.heat.detail;
-  elements.officialRainTitle.textContent = presentation.rain.title;
-  elements.officialRainDetail.textContent = presentation.rain.detail;
-  elements.officialRainDetail.hidden = !presentation.rain.detail;
-}
-
-function smiClass(value) {
-  if (!Number.isFinite(value)) return isGerman() ? "nicht verfügbar" : "unavailable";
-  if (value <= 0.02) return isGerman() ? "außergewöhnliche Dürre" : "exceptional drought";
-  if (value <= 0.05) return isGerman() ? "extreme Dürre" : "extreme drought";
-  if (value <= 0.1) return isGerman() ? "schwere Dürre" : "severe drought";
-  if (value <= 0.2) return isGerman() ? "mäßige Dürre" : "moderate drought";
-  if (value <= 0.3) return isGerman() ? "ungewöhnliche Trockenheit" : "unusual dryness";
-  if (value >= 0.98) return isGerman() ? "außergewöhnlich nass" : "exceptionally wet";
-  if (value >= 0.95) return isGerman() ? "extrem nass" : "extremely wet";
-  if (value >= 0.9) return isGerman() ? "stark nass" : "severely wet";
-  if (value >= 0.8) return isGerman() ? "mäßig nass" : "moderately wet";
-  if (value >= 0.7) return isGerman() ? "ungewöhnlich nass" : "unusually wet";
-  return isGerman() ? "Normalbereich" : "normal range";
-}
-
-function observationText(metrics) {
-  if (Number.isFinite(metrics.dwdObservedTmaxC)) {
-    const completeDay = metrics.dwdObservationKind === "complete-day";
-    const kind = isGerman()
-      ? completeDay ? "vollständiger Tag" : "bisheriger Tagesverlauf"
-      : completeDay ? "complete-day" : "day-so-far";
-    const bias = metrics.temperatureValidationBiasC;
-    const comparison = isGerman()
-      ? completeDay ? "Modellabweichung" : "vorläufige Prognosedifferenz"
-      : completeDay ? "model bias" : "provisional forecast gap";
-    const comparisonText = Number.isFinite(bias)
-      ? `${comparison} ${bias >= 0 ? "+" : ""}${bias} °C`
-      : isGerman() ? "Validierungsvergleich nicht verfügbar" : "validation comparison unavailable";
-    if (metrics.basinCount === 1) {
-      const station = metrics.dwdStationName ? ` ${metrics.dwdStationName}` : "";
-      const distance = Number.isFinite(metrics.dwdStationDistanceKm)
-        ? isGerman() ? ` | ${metrics.dwdStationDistanceKm} km entfernt` : ` | ${metrics.dwdStationDistanceKm} km away`
-        : "";
-      return `DWD${station} ${kind} Tmax ${metrics.dwdObservedTmaxC} °C | ${comparisonText}${distance}`;
-    }
-    const errorLabel = isGerman()
-      ? completeDay ? "MAE" : "vorläufige absolute Differenz"
-      : completeDay ? "MAE" : "provisional absolute gap";
-    const coverage = metrics.dwdObservedStationCount
-      ? isGerman()
-        ? ` | ${metrics.dwdObservedStationCount} Stationen, weiteste Zuordnung ${metrics.dwdStationMaxDistanceKm} km`
-        : ` | ${metrics.dwdObservedStationCount} stations, farthest match ${metrics.dwdStationMaxDistanceKm} km`
-      : "";
-    const errorText = Number.isFinite(metrics.temperatureValidationMaeC)
-      ? ` | ${errorLabel} ${metrics.temperatureValidationMaeC} °C`
-      : "";
-    return isGerman()
-      ? `DWD-Stationszuordnung, ${kind}, Tmax ${metrics.dwdObservedTmaxC} °C, einzugsgebietsgewichtet | ${comparisonText}${errorText}${coverage}`
-      : `DWD matched-station ${kind} Tmax ${metrics.dwdObservedTmaxC} °C, basin-weighted | ${comparisonText}${errorText}${coverage}`;
-  }
-  if (!Number.isFinite(metrics.dwdLatestTemperatureC) || !Number.isFinite(Date.parse(metrics.dwdObservedAt))) {
-    return isGerman()
-      ? `Für ${formatDate(state.date)} ist keine gültige Temperaturbeobachtung einer zugeordneten DWD-Station verfügbar`
-      : `No DWD matched-station temperature observation is valid for ${formatDate(state.date)}`;
-  }
-  if (metrics.basinCount === 1) {
-    const distance = Number.isFinite(metrics.dwdStationDistanceKm)
-      ? isGerman() ? ` | ${metrics.dwdStationDistanceKm} km entfernt` : ` | ${metrics.dwdStationDistanceKm} km away`
-      : "";
-    return isGerman()
-      ? `neueste DWD-Temperatur an ${metrics.dwdStationName || "zugeordneter Station"}: ${metrics.dwdLatestTemperatureC} °C am ${formatTimestamp(metrics.dwdObservedAt)}${distance}`
-      : `latest DWD ${metrics.dwdStationName || "matched station"} temperature ${metrics.dwdLatestTemperatureC} °C at ${formatTimestamp(metrics.dwdObservedAt)}${distance}`;
-  }
-  const farthestMatch = Number.isFinite(metrics.dwdStationMaxDistanceKm)
-    ? isGerman() ? ` | weiteste Einzugsgebiet-Stations-Zuordnung ${metrics.dwdStationMaxDistanceKm} km` : ` | farthest basin-station match ${metrics.dwdStationMaxDistanceKm} km`
-    : "";
-  return isGerman()
-    ? `neueste maximale DWD-Netzwerktemperatur ${metrics.dwdLatestTemperatureC} °C am ${formatTimestamp(metrics.dwdObservedAt)}${farthestMatch}`
-    : `latest DWD network temperature maximum ${metrics.dwdLatestTemperatureC} °C at ${formatTimestamp(metrics.dwdObservedAt)}${farthestMatch}`;
-}
-
-function ensembleText(metrics) {
-  if (!Number.isFinite(metrics.ensemblePeakHourTemperatureSdC)) {
-    return isGerman()
-      ? "Für dieses vergangene Datum ist keine Streuung der ICON-Ensemblemitglieder veröffentlicht"
-      : "No ICON ensemble-member dispersion is published for this retrospective date";
-  }
-  return isGerman()
-    ? `${metrics.ensembleModel} (${metrics.ensembleMemberCount} Mitglieder) | Mitglieder-SD zur heißesten mittleren Stunde ${metrics.ensemblePeakHourTemperatureSdC} °C | maximale stündliche Niederschlags-SD ${metrics.ensembleMaxHourlyPrecipitationSdMm} mm`
-    : `${metrics.ensembleModel} (${metrics.ensembleMemberCount} members) | member SD at hottest mean hour ${metrics.ensemblePeakHourTemperatureSdC} °C | max hourly precipitation member SD ${metrics.ensembleMaxHourlyPrecipitationSdMm} mm`;
-}
-
-function ufzText(metrics) {
-  if (!Number.isFinite(metrics.ufzTopsoilSmi) || !Number.isFinite(metrics.ufzTotalSmi)) {
-    return isGerman() ? "Für dieses vergangene Datum ist kein gültiger UFZ-Ausgangswert verfügbar" : "No UFZ baseline is valid for this retrospective date";
-  }
-  const validDate = formatDate(state.liveData.soilMoisture.ufz.validAt.slice(0, 10));
-  return isGerman()
-    ? `Ausgangswert ${validDate}: Oberboden-SMI ${metrics.ufzTopsoilSmi} (${smiClass(metrics.ufzTopsoilSmi)}) | Gesamtboden-SMI ${metrics.ufzTotalSmi} (${smiClass(metrics.ufzTotalSmi)})`
-    : `baseline ${validDate}: topsoil SMI ${metrics.ufzTopsoilSmi} (${smiClass(metrics.ufzTopsoilSmi)}) | total-soil SMI ${metrics.ufzTotalSmi} (${smiClass(metrics.ufzTotalSmi)})`;
-}
-
-function radolanText(metrics) {
-  if (!Number.isFinite(metrics.radolanPrecipitation24hMm)) {
-    return isGerman() ? "Für dieses vergangene Datum ist kein gültiger RADOLAN-Ausgangswert verfügbar" : "No RADOLAN baseline is valid for this retrospective date";
-  }
-  const radolan = state.liveData.observations.radolan;
-  return isGerman()
-    ? `${metrics.radolanPrecipitation24hMm} mm / gleitende 24 h bis ${formatTimestamp(radolan.periodEnd)} | Prognose ${metrics.precipitationMm} mm/Tag`
-    : `${metrics.radolanPrecipitation24hMm} mm / rolling 24 h ending ${formatTimestamp(radolan.periodEnd)} | forecast ${metrics.precipitationMm} mm/day`;
-}
-
-function renderDetails() {
-  const unit = selectedUnit();
-  const metrics = metricsForUnit(unit.level, unit.id);
-  const score = scoreForLayer(metrics, state.layer);
-  const level = severity(score);
-  const plain = state.detail === "plain";
-  const kind = unit.level === "district"
-    ? isGerman() ? "Kreis / kreisfreie Stadt" : "district / urban district"
-    : unit.level === "basin"
-      ? isGerman() ? "Teileinzugsgebiet" : "sub-basin"
-      : isGerman() ? "Bundesland" : "state";
-  const currentModelDate = state.availableDates[state.liveData.forecast.pastDays];
-  const isRetrospective = isRetrospectiveDate(state.date, currentModelDate);
-
-  elements.signalHeading.textContent = plain
-    ? ui("whatThisMeans")
-    : isGerman() ? "Technische Evidenz" : "Technical evidence";
-  elements.detailPanel.classList.toggle("is-plain", plain);
-  elements.detailModeNote.textContent = plain
-    ? ui("plainLanguage")
-    : isGerman() ? "Exakte Werte und Quellen" : "Exact values and sources";
-  elements.plainSourceSummary.textContent = isGerman() ? PLAIN_SOURCE_SUMMARY_DE : PLAIN_SOURCE_SUMMARY;
-  elements.plainSourceSummary.hidden = !plain;
-  elements.provenanceList.hidden = plain;
-  elements.selectedKind.textContent = isGerman() ? `Ausgewählt: ${kind}` : `Selected ${kind}`;
-  elements.regionTitle.textContent = featureName(unit.feature, unit.level);
-  elements.riskLevel.textContent = plain ? localizedSeverity(level) : `${localizedSeverity(level)} ${score}`;
-  elements.riskLevel.className = `risk-level ${level.className}`;
-  const focusStatus = isRetrospective
-    ? isGerman()
-      ? "Diese historische Ansicht behält die Auswahl bei, erzeugt aber keine aktuellen Handlungshinweise."
-      : "This historical view keeps the selection but does not generate current action guidance."
-    : state.freshness.stale
-      ? isGerman()
-        ? "Die Auswahl ist aktiv, Handlungshinweise pausieren jedoch bis zur Datenaktualisierung."
-        : "The selection is active, but action guidance is paused until the data refreshes."
-      : isGerman()
-        ? "Dies ändert die Priorität der Empfehlungen, nicht den zugrunde liegenden Umweltindex."
-        : "This changes the recommendation priority, not the underlying environmental score.";
-  if (state.audience === "farmers") {
-    elements.personalisationSummary.hidden = false;
-    elements.personalisationSummary.textContent = isGerman()
-      ? `Schwerpunkt: ${localizedProfile("farmGoals", metrics.farmGoal, FARM_GOALS[metrics.farmGoal].label)}. ` +
-        `Angepasst für ${localizedProfile("crops", metrics.crop, metrics.cropLabel)}, ` +
-        `${localizedProfile("stages", metrics.stage, metrics.stageLabel)}${metrics.stageAuto ? " aus dem ausgewählten Datum geschätzt" : " manuell ausgewählt"}. ${focusStatus}`
-      : `Advice focus: ${FARM_GOALS[metrics.farmGoal].label}. Personalised for ${metrics.cropLabel}, ` +
-        `${metrics.stageLabel.toLowerCase()}${metrics.stageAuto ? " estimated from the selected date" : " selected manually"}. ${focusStatus}`;
-  } else if (state.audience === "gardeners") {
-    elements.personalisationSummary.hidden = false;
-    elements.personalisationSummary.textContent = isGerman()
-      ? `Schwerpunkt: ${localizedProfile("gardenGoals", metrics.gardenGoal, metrics.gardenGoalLabel)}. ` +
-        `Angepasst für ${localizedProfile("plants", metrics.plant, metrics.plantLabel)}; Standort: ` +
-        `${localizedProfile("settings", metrics.gardenSetting, metrics.gardenSettingLabel)}; Entwässerung: ${localizedProfile("gardenSoils", metrics.gardenSoil, metrics.gardenSoilLabel)}. ${focusStatus}`
-      : `Advice focus: ${metrics.gardenGoalLabel}. Personalised for ${metrics.plantLabel.toLowerCase()} in ` +
-        `${metrics.gardenSettingLabel.toLowerCase()} with ${metrics.gardenSoilLabel.toLowerCase()} drainage. ${focusStatus}`;
-  } else {
-    elements.personalisationSummary.hidden = true;
-    elements.personalisationSummary.textContent = "";
-  }
-  renderOfficialWarning(unit);
-  if (!metrics.available) {
-    elements.riskLevel.textContent = isGerman() ? "Nicht verfügbar" : "Unavailable";
-    if (plain) {
-      elements.regionSummary.textContent = isGerman()
-        ? "Es liegen nicht genügend verlässliche lokale Informationen vor, um für dieses Gebiet ein Entscheidungssignal abzuleiten."
-        : "There is not enough reliable local information to translate this area into a decision signal.";
-      elements.signalList.replaceChildren(
-        appendSignal(isGerman() ? "Was fehlt" : "What is missing", metrics.spatialCoverage < 50
-          ? isGerman() ? "Zu wenig Fläche dieses Gebiets stimmt mit der lokalen Einzugsgebietskarte überein." : "Too little of this area matches the local drainage-area map."
-          : isGerman() ? "Zu viele der erforderlichen Eingangsdaten fehlen." : "Too many of the required data inputs are missing."),
-        appendSignal(isGerman() ? "Was HeatLens tut" : "What HeatLens does", isGerman()
-          ? "Das Risikoergebnis und die Handlungshinweise werden ausgeblendet, statt die Lücke mit Werten benachbarter Gebiete zu füllen."
-          : "It hides the risk result and action suggestions instead of filling the gap with nearby values."),
-        appendSignal(isGerman() ? "Was jetzt zu tun ist" : "What to do", isGerman()
-          ? "Aktuelle amtliche Informationen und Beobachtungen aus dem ausgewählten Gebiet nutzen."
-          : "Use current official information and observations from the selected area.")
-      );
-    } else {
-      const coverageReason = metrics.spatialCoverage < 50
-        ? isGerman() ? `die exakte Einzugsgebietsüberlagerung nur ${metrics.spatialCoverage}% der Region abdeckt` : `the exact basin overlay covers only ${metrics.spatialCoverage}% of this region`
-        : isGerman() ? `die Quellenvollständigkeit nur ${metrics.completeness}% beträgt` : `source completeness is only ${metrics.completeness}%`;
-      elements.regionSummary.textContent = isGerman()
-        ? `Für ${formatDate(state.date)} wird kein Wert ausgegeben, weil ${coverageReason}.`
-        : `${formatDate(state.date)} has no score because ${coverageReason}.`;
-      elements.signalList.replaceChildren(
-        appendSignal(isGerman() ? "Räumliche Abdeckung" : "Spatial coverage", isGerman() ? `${metrics.spatialCoverage}% exakte Überlagerung` : `${metrics.spatialCoverage}% exact overlap`),
-        appendSignal(isGerman() ? "Quellenvollständigkeit" : "Source completeness", `${metrics.completeness}%`),
-        appendSignal("Status", isGerman() ? "Risiko- und Handlungsausgaben unterdrückt" : "Risk and action outputs suppressed"),
-        appendSignal(isGerman() ? "Amtliche Quelle" : "Official source", isGerman() ? "DWD und zuständige lokale Behörde nutzen" : "Use DWD and the responsible local authority")
-      );
-    }
-    elements.actionList.replaceChildren();
-    elements.actionHeadingLabel.textContent = ui("suggestedActions");
-    elements.confidence.textContent = plain
-      ? isGerman() ? "Nicht genügend lokale Informationen" : "Not enough local information"
-      : isGerman() ? "Unzureichende Eingangsabdeckung" : "Insufficient input coverage";
-    elements.decisionNote.textContent = plain
-      ? isGerman() ? "HeatLens schätzt nicht, wenn die Abdeckung zu gering ist. Amtliche Dienste und lokale Bedingungen direkt prüfen." : "HeatLens does not guess when coverage is too low. Check the official services and local conditions directly."
-      : isGerman() ? "Unter 50% räumlicher Abdeckung oder 85% Quellenvollständigkeit unterdrückt HeatLens die Ausgabe; benachbarte Werte werden nicht als Ersatz verwendet." : "HeatLens fails closed below 50% spatial coverage or 85% source completeness; it does not substitute nearby values.";
-    renderTrend(unit);
-    return;
-  }
-  const actionOptions = warningContextForUnit(unit).actionOptions;
-  const guidance = isGerman()
-    ? technicalGuidanceForDe(metrics, state.audience, actionOptions)
-    : actionsFor(metrics, state.audience, actionOptions);
-  const plainActions = isGerman()
-    ? plainActionsForDe(metrics, state.audience, actionOptions)
-    : plainActionsFor(metrics, state.audience, actionOptions);
-  const confidence = evidenceConfidence(metrics);
-  const dwdSoilDate = formatDate(state.liveData.soilMoisture.dwd.validAt.slice(0, 10));
-  const waterSubject = state.audience === "gardeners"
-    ? localizedProfile("plants", metrics.plant, metrics.plantLabel)
-    : localizedProfile("crops", metrics.crop, metrics.cropLabel);
-  const waterProfile = state.audience === "gardeners"
-    ? isGerman() ? "DWD-Pflanzenwasser-Referenzprofil" : metrics.waterProfileLabel
-    : localizedProfile("waterProfiles", metrics.crop, metrics.cropWaterProfileLabel);
-  const fieldSignal = Number.isFinite(metrics.dwdNfkPct)
-    ? isGerman()
-      ? `Ausgangswert ${dwdSoilDate}: ${waterSubject}, im Mittel ${metrics.dwdNfkPct}% nFK über 10-cm-Schichten bis ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% Flächenabdeckung | ${waterProfile}${state.audience === "farmers" ? ` | ${localizedProfile("soils", metrics.soil, metrics.soilLabel)}` : ""}`
-      : `baseline ${dwdSoilDate}: ${waterSubject}, mean ${metrics.dwdNfkPct}% nFK across 10 cm layers to ${metrics.rootDepthCm} cm | ${metrics.dwdNfkCoveragePct}% area coverage | ${waterProfile}${state.audience === "farmers" ? ` | ${metrics.soilLabel}` : ""}`
-    : isGerman()
-      ? `${waterSubject}: DWD-nFK-Ausgangswert nicht verfügbar oder unter 85% Flächenabdeckung (${metrics.dwdNfkCoveragePct}%) | ${waterProfile}`
-      : `${waterSubject}: DWD nFK baseline unavailable or below 85% area coverage (${metrics.dwdNfkCoveragePct}%) | ${waterProfile}`;
-  const selectedContextSignal = state.audience === "farmers"
-    ? isGerman()
-      ? `${localizedProfile("crops", metrics.crop, metrics.cropLabel)} | ${localizedProfile("stages", metrics.stage, metrics.stageLabel)}${metrics.stageAuto ? " (aus Datum geschätzt)" : " (manuell)"} | ${localizedProfile("soils", metrics.soil, metrics.soilLabel)} | ${localizedProfile("farmGoals", metrics.farmGoal, FARM_GOALS[metrics.farmGoal].label)}`
-      : `${metrics.cropLabel} | ${metrics.stageLabel}${metrics.stageAuto ? " (date-estimated)" : " (manual)"} | ${metrics.soilLabel} | ${FARM_GOALS[metrics.farmGoal].label}`
-    : state.audience === "gardeners"
-      ? isGerman()
-        ? `${localizedProfile("plants", metrics.plant, metrics.plantLabel)} | ${localizedProfile("settings", metrics.gardenSetting, metrics.gardenSettingLabel)} | ${localizedProfile("gardenSoils", metrics.gardenSoil, metrics.gardenSoilLabel)} | ${localizedProfile("gardenSeasons", metrics.gardenSeason, metrics.gardenSeasonLabel)} | ${localizedProfile("gardenGoals", metrics.gardenGoal, metrics.gardenGoalLabel)}`
-        : `${metrics.plantLabel} | ${metrics.gardenSettingLabel} | ${metrics.gardenSoilLabel} | ${metrics.gardenSeasonLabel} | ${metrics.gardenGoalLabel}`
-      : null;
-  elements.regionSummary.textContent = plain
-    ? (isGerman() ? plainLanguageSummaryDe : plainLanguageSummary)(metrics, state.audience, state.layer, {
-        regionName: featureName(unit.feature, unit.level),
-        dateLabel: formatDate(state.date),
-        stale: state.freshness.stale,
-        isRetrospective
-      })
-    : isGerman()
-      ? `${localizedProfile("audiences", state.audience, AUDIENCES[state.audience])}-Screening für ${formatDate(state.date)}: ${localizedSeverity(level).toLowerCase()} bei ${localizedProfile("layers", state.layer, LAYERS[state.layer]).toLowerCase()}, basierend auf ${metrics.basinCount} beitragenden Teileinzugsgebiet${metrics.basinCount === 1 ? "" : "en"}.`
-      : `${AUDIENCES[state.audience]} screening estimate for ${formatDate(state.date)}: ${level.label.toLowerCase()} ${LAYERS[state.layer].toLowerCase()} based on ${metrics.basinCount} contributing sub-basin${metrics.basinCount === 1 ? "" : "s"}.`;
-  const signals = plain
-    ? (isGerman() ? plainLanguageSignalsDe : plainLanguageSignals)(metrics, state.audience, state.layer, { stale: state.freshness.stale, isRetrospective })
-        .map((signal) => appendSignal(signal.label, signal.text))
-    : [
-        ...(selectedContextSignal ? [appendSignal(isGerman() ? "Ausgewählter Kontext" : "Selected context", selectedContextSignal)] : []),
-        appendSignal(isGerman() ? "Thermische Prognose" : "Thermal forecast", isGerman()
-          ? `Tmax ${metrics.tmaxC} \u00b0C | max. gefühlte Temperatur ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`
-          : `Tmax ${metrics.tmaxC} \u00b0C | feels-like max ${metrics.apparentMaxC} \u00b0C | Tmin ${metrics.tminC} \u00b0C`),
-        appendSignal(isGerman() ? "Messabgleich" : "Measured check", observationText(metrics)),
-        appendSignal(isGerman() ? "Ensemblestreuung" : "Ensemble dispersion", ensembleText(metrics)),
-        appendSignal(isGerman() ? "UFZ-Perzentil-Ausgangswert" : "UFZ percentile baseline", ufzText(metrics)),
-        appendSignal(isGerman() ? "Pflanzenwasser-Ausgangswert" : "Plant-water baseline", `${Number.isFinite(metrics.ufzPlantAvailableWaterPct) ? `UFZ ${metrics.ufzPlantAvailableWaterPct}% nFK | ` : ""}${fieldSignal}`),
-        appendSignal(isGerman() ? "Wasserprognose" : "Water forecast", isGerman()
-          ? `Wurzelzone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-Tage P-ET0 ${metrics.waterBalance3dMm} mm | ET0 ${metrics.et0Mm} mm/Tag`
-          : `root-zone ${metrics.soilMoistureM3M3} m\u00b3/m\u00b3 | 3-day P-ET0 ${metrics.waterBalance3dMm} mm | ET0 ${metrics.et0Mm} mm/day`),
-        appendSignal(isGerman() ? "RADOLAN-Ausgangswert" : "RADOLAN baseline", radolanText(metrics)),
-        appendSignal(isGerman() ? "Wasser-Screening" : "Water screening", isGerman()
-          ? `Trockenstress ${metrics.dryStressScore}/100 | überschüssiges Wasser ${metrics.wetStressScore}/100`
-          : `dry ${metrics.dryStressScore}/100 | excess water ${metrics.wetStressScore}/100`),
-        appendSignal(isGerman() ? "Evidenzqualität" : "Evidence quality", isGerman()
-          ? `${confidence.score}/100 ${confidenceLabel("de", confidence).toLowerCase()} | ${metrics.completeness}% Vollständigkeit der Antriebsdaten | ${metrics.spatialCoverage}% exakte Überlagerung`
-          : `${confidence.score}/100 ${confidence.label.toLowerCase()} | ${metrics.completeness}% forcing completeness | ${metrics.spatialCoverage}% exact overlap`)
-      ];
-  elements.signalList.replaceChildren(...signals);
-  const historicalInterpretation = isGerman() ? [
-    {
-      category: "Retrospective",
-      text: plain
-        ? `${formatDate(state.date)} ist eine Rekonstruktion eines vergangenen Datums. Sie beschreibt die damaligen Signale und ist keine Empfehlung für heute.`
-        : `${formatDate(state.date)} ist eine historische Screening-Rekonstruktion. Sie beschreibt die oben gezeigten datierten Hitze- und Bodenwassersignale und ist kein aktueller Handlungshinweis.`
-    },
-    {
-      category: "Validate",
-      text: plain
-        ? "Vor Schlussfolgerungen mit archivierten amtlichen Warnungen, lokalen Messungen und dokumentierten Folgen vergleichen."
-        : "Datierte DWD-Stations- und RADOLAN-Beobachtungen mit archivierten amtlichen Warnungen, lokalen Messungen und dokumentierten Folgen vergleichen."
-    }
-  ] : plain ? [
-    {
-      category: "Retrospective",
-      text: `${formatDate(state.date)} is a past-date reconstruction. It describes signals for that date and is not advice for today.`
-    },
-    {
-      category: "Validate",
-      text: "Compare it with archived official warnings, local measurements, and recorded outcomes before drawing conclusions."
-    }
-  ] : [
-    {
-      category: "Retrospective",
-      text: `${formatDate(state.date)} is a historical screening reconstruction. It describes the dated heat and soil-water signals shown above; it is not current action guidance.`
-    },
-    {
-      category: "Validate",
-      text: "Compare the dated DWD station and RADOLAN observations with archived official warnings, local measurements, and recorded outcomes before drawing conclusions."
-    }
-  ];
-  const activeFocusLabel = state.audience === "farmers"
-    ? localizedProfile("farmGoals", metrics.farmGoal, FARM_GOALS[metrics.farmGoal].label)
-    : state.audience === "gardeners" ? localizedProfile("gardenGoals", metrics.gardenGoal, metrics.gardenGoalLabel) : null;
-  elements.actionHeadingLabel.textContent = isRetrospective
-    ? isGerman() ? "Historische Einordnung" : "Historical interpretation"
-    : activeFocusLabel
-      ? isGerman() ? `Empfohlene Schritte: ${activeFocusLabel}` : `Suggested actions: ${activeFocusLabel}`
-      : ui("suggestedActions");
-  const actions = isRetrospective
-    ? historicalInterpretation
-    : state.freshness.stale
-      ? []
-      : plain
-        ? plainActions
-        : guidance.actions;
-  elements.actionList.replaceChildren(...actions.map((action) => {
-    const item = document.createElement("li");
-    item.classList.toggle("is-focused-action", action.focus === true);
-    const category = document.createElement("strong");
-    category.textContent = isGerman()
-      ? plainActionCategoryDe(action.category)
-      : plain ? plainActionCategory(action.category) : action.category;
-    const text = document.createElement("span");
-    text.textContent = action.text;
-    item.append(category, text);
-    return item;
-  }));
-  elements.confidence.textContent = plain
-    ? (isGerman() ? plainConfidenceLabelDe : plainConfidenceLabel)(metrics, { stale: state.freshness.stale, isRetrospective })
-    : `${confidenceLabel(state.language, confidence)} ${confidence.score}/100`;
-  elements.decisionNote.textContent = plain
-    ? (isGerman() ? plainDecisionNoteDe : plainDecisionNote)(state.audience, { isRetrospective, stale: state.freshness.stale })
-    : isRetrospective
-    ? isGerman()
-      ? "Historische Ansichten dienen nur der Auswertung und Modellbewertung. Sie dürfen nicht als heutige Hinweise für Bevölkerung, Landwirtschaft oder Kommunen gelesen werden; der geladene DWD-Feed ist kein Warnarchiv."
-      : "Historical views support review and model evaluation only. They must not be read as present-day resident, farm, or municipal instructions; the loaded DWD feed is not a warning archive."
-    : state.freshness.stale
-    ? state.freshness.sourceStale
-      ? isGerman()
-        ? `Empfohlene Schritte werden unterdrückt, weil ${staleSourceNames()} die Laufzeitgrenze für Aktualität überschreiten. Aktuelle amtliche und lokale Quellen prüfen.`
-        : `Suggested actions are suppressed because ${staleSourceNames()} exceeded the runtime freshness limit. Check current official and local sources.`
-      : isGerman()
-        ? "Empfohlene Schritte werden unterdrückt, weil der letzte gültige Datenstand veraltet ist. DWD und lokale amtliche Kanäle prüfen."
-        : "Suggested actions are suppressed because the last valid source snapshot is stale. Check DWD and local official channels."
-    : guidance.note;
-  renderTrend(unit);
-}
-
 function renderResolutionNote() {
   if (state.detail === "plain") {
     if (state.level === "basin") {
@@ -1362,16 +725,123 @@ function renderResolutionNote() {
   }
 }
 
-function renderAll() {
+function setPanel(panel) {
+  state.panel = panel;
+  elements.application.dataset.view = panel;
+  for (const [tab, name] of [[elements.resultsTab, "results"], [elements.mapTab, "map"]]) {
+    tab.setAttribute("aria-selected", String(panel === name));
+    tab.tabIndex = panel === name ? 0 : -1;
+  }
+  if (panel === "map") window.requestAnimationFrame(() => state.mapInstance?.invalidateSize({ animate: false, pan: false }));
+}
+
+function renderWorkbenchControls() {
+  const selected = selectedUnit();
+  elements.filterContext.textContent = `${featureName(selected.feature, selected.level)} · ${formatDate(state.date)} · ${localizedProfile("audiences", state.audience, AUDIENCES[state.audience])}`;
+  const adjustment = state.dateAdjustment;
+  elements.dateNotice.hidden = !adjustment && !state.selectionNotice;
+  const dateMessage = adjustment ? ui(adjustment.reason === "invalid" ? "requestedDateInvalid" : "requestedDateAdjusted", {
+    requested: adjustment.requestedDate, displayed: formatDate(adjustment.date)
+  }) : "";
+  elements.dateNotice.textContent = [dateMessage, state.selectionNotice ? isGerman()
+    ? "Die Region aus dem Link ist nicht verfügbar. Die angezeigte Auswahl wurde auf eine unterstützte Region zurückgesetzt."
+    : "The linked region is unavailable. The displayed selection has been reset to a supported region." : ""].filter(Boolean).join(" ");
+  const today = berlinToday();
+  const focusedDate = elements.dateWindow.contains(document.activeElement) ? document.activeElement.dataset.date : null;
+  elements.dateWindow.replaceChildren(...state.availableDates.map((date) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.date = date;
+    const kind = date < today ? "past" : date === today ? "today" : "forecast";
+    button.dataset.kind = kind;
+    button.setAttribute("aria-pressed", String(date === state.date));
+    const kindLabel = ui(kind === "past" ? "datePast" : kind === "today" ? "dateToday" : "dateForecast");
+    button.setAttribute("aria-label", `${formatDate(date)} · ${kindLabel}`);
+    const day = document.createElement("strong");
+    day.textContent = new Intl.DateTimeFormat(LOCALE_CODES[state.language], { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T12:00:00Z`));
+    const label = document.createElement("span");
+    label.textContent = kindLabel;
+    button.append(day, label);
+    button.addEventListener("click", () => selectDate(date));
+    return button;
+  }));
+  if (focusedDate) [...elements.dateWindow.children].find((button) => button.dataset.date === focusedDate)?.focus({ preventScroll: true });
+  elements.settings.hidden = !["farmers", "gardeners"].includes(state.audience);
+  if (state.audience === "farmers") elements.settingsSummary.textContent = [
+    localizedProfile("crops", state.crop, FIELD_CONTEXTS.crops[state.crop].label),
+    localizedProfile("stages", state.stage, FIELD_CONTEXTS.stages[state.stage].label),
+    localizedProfile("soils", state.soil, FIELD_CONTEXTS.soils[state.soil].label)
+  ].join(" · ");
+  else if (state.audience === "gardeners") elements.settingsSummary.textContent = [
+    localizedProfile("plants", state.plant, HORTICULTURE_CONTEXTS.plants[state.plant].label),
+    localizedProfile("settings", state.gardenSetting, HORTICULTURE_CONTEXTS.settings[state.gardenSetting].label)
+  ].join(" · ");
+  elements.toggleActions.textContent = ui(elements.toggleActions.getAttribute("aria-expanded") === "true" ? "fewerActions" : "moreActions");
+  renderBreadcrumbs();
+  renderUpdateStatus();
+  setPanel(state.panel);
+}
+
+function renderBreadcrumbs() {
+  const nodes = [];
+  const add = (label, patch, current = false) => {
+    if (nodes.length) { const separator = document.createElement("span"); separator.textContent = "›"; separator.setAttribute("aria-hidden", "true"); nodes.push(separator); }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    if (current) button.setAttribute("aria-current", "location");
+    button.addEventListener("click", () => applyViewPatch(patch));
+    nodes.push(button);
+  };
+  add(isGerman() ? "Deutschland" : "Germany", { level: "state", selectedDistrict: null, selectedBasin: null }, state.level === "state");
+  const stateFeature = state.stateById.get(state.selectedState);
+  if (stateFeature) add(featureName(stateFeature, "state"), { level: "district", selectedDistrict: null, selectedBasin: null }, state.level === "district" && !state.selectedDistrict);
+  const district = state.locations.find((item) => item.id === state.selectedDistrict);
+  if (district) add(district.name, { level: "district", selectedBasin: null }, state.level === "district");
+  if (state.selectedBasin && state.basinById.has(state.selectedBasin)) add(featureName(state.basinById.get(state.selectedBasin), "basin"), { level: "basin" }, true);
+  const drill = document.createElement("button");
+  drill.type = "button";
+  drill.className = "scope-drill";
+  drill.textContent = ui(state.level === "state" ? "viewDistricts" : "viewBasins");
+  drill.hidden = state.level === "basin";
+  drill.addEventListener("click", () => applyViewPatch({ level: state.level === "state" ? "district" : "basin" }));
+  nodes.push(drill);
+  elements.breadcrumbs.replaceChildren(...nodes);
+}
+
+function renderSourceHealth() {
+  if (!elements.sourceHealth) {
+    elements.sourceHealth = document.createElement("dl");
+    elements.sourceHealth.className = "provenance-list source-health-list";
+    document.getElementById("source-details").append(elements.sourceHealth);
+  }
+  const names = { radolan: "RADOLAN", dwdTemperature: isGerman() ? "DWD-Temperatur" : "DWD temperature", ufz: "UFZ", dwdSoil: isGerman() ? "DWD-Boden" : "DWD soil" };
+  const rows = Object.entries(state.sourceFreshness.sources).map(([key, source]) => [names[key], `${source.current ? isGerman() ? "Aktuell" : "Current" : isGerman() ? "Veraltet / fehlt" : "Stale / missing"} · ${formatTimestamp(source.validAt)}`]);
+  const warnings = warningFeedFreshness(state.liveData.warnings);
+  rows.push([isGerman() ? "DWD-Warnfeed" : "DWD warning feed", `${warnings.current ? isGerman() ? "Aktuell" : "Current" : isGerman() ? "Gespeichert / nicht bestätigt" : "Saved / unverified"} · ${formatTimestamp(warnings.issuedAt)}`]);
+  rows.push([isGerman() ? "Datenversion" : "Snapshot version", state.manifest.snapshotId]);
+  elements.sourceHealth.replaceChildren(...rows.map(([label, text]) => {
+    const row = document.createElement("div");
+    const term = document.createElement("dt"); term.textContent = label;
+    const value = document.createElement("dd"); value.textContent = text;
+    row.append(term, value); return row;
+  }));
+}
+
+function renderAll({ map = true } = {}) {
   if (!state.ready) return;
   applyDocumentLanguage(document, state.language);
   updateOperationalFreshness();
   validateSelection();
   renderControls();
   renderSummary();
-  renderMap();
+  if (map) renderMap();
   renderDetails();
   renderResolutionNote();
+  if (state.level === "state" && !matchesDefaultContext(state)) elements.resolutionNote.textContent += isGerman()
+    ? " Angepasste Werte werden für geladene Regionen berechnet; weitere Bundesländer zum Laden auswählen."
+    : " Custom values are calculated for loaded regions; select another state to load its values.";
+  renderSourceHealth();
   persistViewState();
 }
 
@@ -1393,87 +863,256 @@ function resetSpatialState() {
   state.liveData = null;
   state.liveByBasin.clear();
   state.availableDates = [];
+  state.loadedStates.clear();
+}
+
+function setDataControlsDisabled(disabled) {
+  document.querySelectorAll("[data-level], [data-audience], [data-layer], [data-detail], .field-context-controls select, #date-window button, #scope-breadcrumbs button").forEach((control) => { control.disabled = disabled; });
+  for (const control of [elements.dateInput, elements.previousDay, elements.nextDay, elements.today,
+    elements.locationSearch, elements.regionSelect, elements.shareView, elements.exportView, elements.resetSettings]) control.disabled = disabled;
 }
 
 function setLoading(loading) {
-  elements.retryLoad.hidden = true;
+  state.loading = loading;
   elements.map.setAttribute("aria-busy", String(loading));
-  document.querySelectorAll("button, input, select").forEach((control) => {
-    if (control !== elements.retryLoad) control.disabled = loading;
-  });
+  setDataControlsDisabled(loading);
+  // Language, official-service links, view tabs and retry remain usable.
+  elements.retryLoad.hidden = !loading;
+  elements.retryLoad.disabled = false;
   if (loading) {
-    elements.mapStatus.textContent = isGerman()
-      ? "Grenzen und der neueste validierte Prognosedatenstand werden geladen."
-      : "Loading boundaries and the latest validated forecast snapshot.";
+    elements.retryLoad.hidden = true;
+    elements.mapStatus.textContent = isGerman() ? "Die Deutschlandübersicht wird geladen." : "Loading the Germany overview.";
     elements.riskLevel.textContent = ui("loading");
   }
 }
 
-async function loadApplication() {
-  state.ready = false;
-  resetSpatialState();
-  setLoading(true);
-  elements.mapStatus.setAttribute("role", "status");
+let navigationSequence = 0;
+let loadSequence = 0;
+let updateCheckTime = 0;
+
+function berlinToday() {
+  const values = Object.fromEntries(new Intl.DateTimeFormat("en", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" })
+    .formatToParts(new Date()).map(({ type, value }) => [type, value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function mergeBundle(bundle) {
+  validateLivePayload(bundle.livePayload, bundle.basins.features);
+  const mergeFeatures = (current, next, key) => [...new Map([...current, ...next].map((feature) => [key(feature), feature])).values()];
+  state.districtFeatures = mergeFeatures(state.districtFeatures, bundle.districts.features, (feature) => feature.properties.NUTS_ID);
+  state.basinFeatures = mergeFeatures(state.basinFeatures, bundle.basins.features, (feature) => String(feature.properties.HYBAS_ID));
+  state.crosswalk = [...new Map([...state.crosswalk, ...bundle.crosswalk].map((record) => [`${record.NUTS_ID}|${record.HYBAS_ID}`, record])).values()];
+  for (const basin of bundle.livePayload.basins) {
+    state.liveByBasin.set(String(basin.id), new Map(basin.days.map((day) => [day.date, { ...basin.context, ...day }])));
+  }
+  state.loadedStates.add(bundle.stateId);
+  state.predictionCache.clear();
+  state.metricCache.clear();
+  assignSpatialHierarchy();
+}
+
+async function ensureState(stateId) {
+  if (state.loadedStates.has(stateId)) return;
+  const manifest = state.manifest;
+  const bundle = await dataClient.loadState(stateId, manifest);
+  if (state.manifest?.snapshotId !== manifest.snapshotId) throw new Error("The snapshot changed while loading this region");
+  mergeBundle(bundle);
+}
+
+function detailStateFor(view) {
+  return view.level !== "state" || !matchesDefaultContext(view)
+    ? view.selectedDistrict?.slice(0, 3) || view.selectedState : null;
+}
+
+async function applyViewPatch(patch, { clearDateNotice = false, map = true } = {}) {
+  if (state.updateStatus === "applying") return;
+  const sequence = ++navigationSequence;
+  const view = { ...state, ...patch };
+  const neededState = detailStateFor(view);
   try {
-    initializeMap();
-    const [states, districts, basins, crosswalk, livePayload] = await Promise.all([
-      fetch(STATE_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("State boundaries unavailable"))),
-      fetch(DISTRICT_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("District boundaries unavailable"))),
-      fetch(BASIN_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Basin boundaries unavailable"))),
-      fetch(CROSSWALK_URL).then((response) => response.ok ? response.json() : Promise.reject(new Error("Spatial crosswalk unavailable"))),
-      fetch(LIVE_DATA_URL, { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject(new Error("Live forecast snapshot unavailable")))
-    ]);
-    const d3 = globalThis.d3;
-    if (!d3?.geoCentroid) throw new Error("Bundled D3 geography library unavailable");
-    state.stateFeatures = states.features.filter((feature) => feature.properties.CNTR_CODE === "DE");
-    state.districtFeatures = districts.features;
-    state.basinFeatures = basins.features;
-    state.crosswalk = crosswalk;
-    state.liveData = validateLivePayload(livePayload, state.basinFeatures);
-    state.availableDates = [...state.liveData.forecast.dates];
-    const currentForecastDate = state.availableDates[Math.min(state.liveData.forecast.pastDays || 0, state.availableDates.length - 1)];
-    state.date = resolveForecastDate(state.date, state.availableDates, currentForecastDate);
-    updateOperationalFreshness();
-    state.liveData.basins.forEach((basin) => {
-      state.liveByBasin.set(String(basin.id), new Map(basin.days.map((day) => [
-        day.date,
-        { ...basin.context, ...day }
-      ])));
-    });
-    state.d3 = d3;
-    assignSpatialHierarchy();
-    validateSelection();
-    state.ready = true;
-    setLoading(false);
-    renderAll();
+    if (neededState && !state.loadedStates.has(neededState)) {
+      state.detailLoading = true;
+      elements.map.setAttribute("aria-busy", "true");
+      elements.viewFeedback.textContent = isGerman() ? "Details werden geladen; die Übersicht bleibt verfügbar." : "Loading regional detail; the overview remains available.";
+      await ensureState(neededState);
+    }
+    if (sequence !== navigationSequence) return;
+    Object.assign(state, patch);
+    if (clearDateNotice) state.dateAdjustment = null;
+    state.detailLoading = false;
+    state.failedPatch = null;
+    state.selectionNotice = false;
+    elements.retryLoad.hidden = true;
+    delete elements.retryLoad.dataset.region;
+    elements.map.setAttribute("aria-busy", "false");
+    elements.viewFeedback.textContent = "";
+    renderAll({ map });
+    if (narrowWorkspace.matches && (patch.selectedState || patch.selectedDistrict || patch.selectedBasin)) {
+      const hadFilterFocus = elements.filters.contains(document.activeElement);
+      elements.filters.open = false;
+      if (hadFilterFocus) elements.filterSummary.focus({ preventScroll: true });
+    }
   } catch (error) {
-    setLoading(false);
-    state.ready = false;
-    if (state.mapInstance && state.riskLayer) state.mapInstance.removeLayer(state.riskLayer);
-    if (state.mapInstance && state.scopeOverlay) state.mapInstance.removeLayer(state.scopeOverlay);
-    state.riskLayer = null;
-    state.scopeOverlay = null;
-    elements.signalList.replaceChildren();
-    elements.actionList.replaceChildren();
-    elements.trendDescription.textContent = isGerman()
-      ? "Der Risikoverlauf ist nicht verfügbar, weil kein vollständiger validierter Datenstand geladen werden konnte."
-      : "The risk trend is unavailable because a complete validated snapshot could not be loaded.";
-    elements.trend.replaceChildren(elements.trendSvgTitle, elements.trendDescription);
-    elements.regionSummary.textContent = isGerman()
-      ? "Validierte Karten- oder Prognosedaten sind nicht verfügbar."
-      : "Validated map or forecast data unavailable.";
-    elements.mapStatus.textContent = isGerman()
-      ? "HeatLens konnte keinen vollständigen validierten Datenstand laden. Verbindung oder lokalen Server prüfen und erneut versuchen."
-      : "HeatLens could not load a complete validated snapshot. Check the connection or local server, then retry.";
-    elements.mapStatus.setAttribute("role", "alert");
-    elements.riskLevel.textContent = isGerman() ? "Nicht verfügbar" : "Unavailable";
+    if (sequence !== navigationSequence) return;
+    state.detailLoading = false;
+    elements.map.setAttribute("aria-busy", "false");
     elements.retryLoad.hidden = false;
-    document.querySelectorAll("button, input, select").forEach((control) => {
-      control.disabled = control !== elements.retryLoad;
-    });
     elements.retryLoad.disabled = false;
+    elements.retryLoad.dataset.region = neededState || "";
+    elements.viewFeedback.textContent = isGerman()
+      ? "Regionsdetails konnten nicht geladen werden. Die bisherige Ansicht bleibt erhalten. Erneut versuchen."
+      : "Regional detail could not load. Your previous view is preserved. Retry to try again.";
+    state.failedPatch = patch;
+    console.error(error);
+    // A deployment may have retired the old immutable URL. Offer the new
+    // snapshot while keeping the already verified view on screen.
+    checkForUpdates();
+  }
+}
+
+function renderUpdateStatus() {
+  const key = { idle: "snapshotUpdateHint", checking: "updateChecking", available: "updateAvailable", current: "updateCurrent", failed: "updateFailed", applying: "updatingSnapshot" }[state.updateStatus];
+  elements.updateStatus.textContent = state.reloadRequired
+    ? isGerman() ? "Eine neue Anwendungsversion ist verfügbar. Seite neu laden." : "A new application version is available. Reload the page."
+    : ui(key || "snapshotUpdateHint");
+  elements.updateStatus.dataset.state = state.updateStatus;
+  elements.updateCheck.disabled = state.updateStatus === "checking" || state.updateStatus === "applying";
+  elements.updateApply.hidden = !state.pendingManifest && !state.reloadRequired;
+  elements.updateApply.textContent = state.reloadRequired ? isGerman() ? "Seite neu laden" : "Reload page" : ui("applyUpdate");
+  elements.updateApply.disabled = ["checking", "applying"].includes(state.updateStatus);
+}
+
+async function checkForUpdates({ quiet = false } = {}) {
+  if (state.loading || ["checking", "applying"].includes(state.updateStatus)) return;
+  if (quiet && Date.now() - updateCheckTime < 5 * 60_000) return;
+  updateCheckTime = Date.now();
+  state.updateStatus = "checking";
+  const sequence = loadSequence;
+  renderUpdateStatus();
+  try {
+    const manifest = await dataClient.checkManifest();
+    if (sequence !== loadSequence || state.updateStatus !== "checking") return;
+    state.pendingManifest = manifest.snapshotId !== state.manifest?.snapshotId ? manifest : null;
+    state.reloadRequired = false;
+    state.updateStatus = state.pendingManifest ? "available" : quiet ? "idle" : "current";
+  } catch (error) {
+    if (sequence !== loadSequence || state.updateStatus !== "checking") return;
+    state.updateStatus = "failed";
+    state.reloadRequired = /model version changed/i.test(error.message);
     console.error(error);
   }
+  renderUpdateStatus();
+}
+
+function renderLoadFailure() {
+  const message = isGerman()
+    ? "Die geprüfte Übersicht konnte nicht geladen werden. Verbindung prüfen und erneut versuchen. Amtliche Dienste bleiben erreichbar."
+    : "The validated overview could not load. Check your connection and retry. Official services remain available.";
+  elements.mapStatus.setAttribute("role", "alert");
+  elements.mapStatus.textContent = message;
+  elements.regionSummary.textContent = message;
+  elements.riskLevel.textContent = isGerman() ? "Nicht verfügbar" : "Unavailable";
+  elements.actionList.replaceChildren();
+  elements.toggleActions.hidden = true;
+  elements.decisionNote.textContent = isGerman()
+    ? "Ohne geprüfte Daten werden keine Handlungshinweise erzeugt. Aktuelle amtliche und lokale Quellen prüfen."
+    : "Advice is unavailable until validated data can be loaded. Check current official and local sources.";
+  elements.officialWarningHeading.textContent = isGerman() ? "DWD-Warnfeed nicht geladen" : "DWD warning feed not loaded";
+  for (const title of [elements.officialHeatTitle, elements.officialRainTitle]) title.textContent = isGerman() ? "Amtliche Warnlage direkt beim DWD prüfen" : "Check DWD directly for official warnings";
+  elements.officialWarningContext.replaceChildren();
+}
+
+async function loadApplication({ manifest: suppliedManifest } = {}) {
+  const sequence = ++loadSequence;
+  ++navigationSequence;
+  const hadOverview = state.ready;
+  if (!hadOverview) setLoading(true);
+  state.updateStatus = "applying";
+  setDataControlsDisabled(true);
+  elements.map.setAttribute("aria-busy", "true");
+  renderUpdateStatus();
+  try {
+    initializeMap();
+    const next = await dataClient.loadOverview(suppliedManifest || {});
+    if (sequence !== loadSequence) return;
+    const d3 = globalThis.d3;
+    if (!d3?.geoCentroid) throw new Error("Bundled D3 geography library unavailable");
+    const requested = hadOverview ? state.date : state.requestedDate;
+    const intended = Object.fromEntries(Object.keys(DEFAULT_VIEW).map((key) => [key, state[key]]));
+    let selectionAdjusted = false;
+    if (!next.manifest.states[intended.selectedState]) { intended.selectedState = DEFAULT_VIEW.selectedState; selectionAdjusted = true; }
+    const linkedDistrict = intended.selectedDistrict && next.locations.find((item) => item.level === "district" && item.id === intended.selectedDistrict);
+    if (intended.selectedDistrict && !linkedDistrict) {
+      intended.selectedDistrict = null; intended.selectedBasin = null; intended.level = "state"; selectionAdjusted = true;
+    } else if (linkedDistrict) intended.selectedState = linkedDistrict.stateId;
+    if (intended.selectedBasin && !next.overview.basinIndex?.some((item) => item.id === intended.selectedBasin && item.stateId)) {
+      intended.selectedBasin = null; intended.level = intended.selectedDistrict ? "district" : "state"; selectionAdjusted = true;
+    }
+    if (intended.selectedBasin && !intended.selectedDistrict) {
+      const basin = next.overview.basinIndex?.find((item) => item.id === intended.selectedBasin);
+      if (basin?.districtId) { intended.selectedDistrict = basin.districtId; intended.selectedState = basin.stateId; }
+    }
+    const nextFallback = next.manifest.forecastDates.includes(berlinToday()) ? berlinToday()
+      : next.manifest.forecastDates[next.metadata.forecast.pastDays || 0];
+    const nextDate = resolveForecastSelection(requested, next.manifest.forecastDates, nextFallback);
+    intended.date = nextDate.date;
+    const neededState = detailStateFor(intended);
+    const preparedBundle = hadOverview && neededState ? await dataClient.loadState(neededState, next.manifest) : null;
+    if (sequence !== loadSequence) return;
+    intended.language = state.language;
+    // Only commit a complete, verified overview. Failed update downloads leave the current view intact.
+    resetSpatialState();
+    state.d3 = d3;
+    state.manifest = next.manifest;
+    state.overview = next.overview;
+    state.locations = next.locations.map((item) => ({ ...item, stateName: next.locations.find((parent) => parent.level === "state" && parent.id === item.stateId)?.name || "" }));
+    state.stateFeatures = next.states.features;
+    state.liveData = { ...next.metadata, basins: [] };
+    state.availableDates = [...state.liveData.forecast.dates];
+    state.stateFeatures.forEach((feature) => state.stateById.set(featureId(feature, "state"), feature));
+    for (const [id, profile] of Object.entries(next.profiles)) state.stateProfile.set(id, profile);
+    state.date = nextDate.date;
+    state.dateAdjustment = nextDate.adjusted ? nextDate : null;
+    state.selectionNotice = selectionAdjusted;
+    // Render the useful national view before downloading district or personalised detail.
+    state.selectedState = intended.selectedState;
+    state.level = "state";
+    state.selectedDistrict = null;
+    state.selectedBasin = null;
+    if (preparedBundle) { mergeBundle(preparedBundle); Object.assign(state, intended); }
+    else if (!matchesDefaultContext(state)) Object.assign(state, DEFAULT_CONTEXT_FOR_AUDIENCE(state.audience));
+    state.ready = true;
+    state.pendingManifest = null;
+    state.reloadRequired = false;
+    state.failedPatch = null;
+    state.updateStatus = "current";
+    setLoading(false);
+    elements.retryLoad.hidden = true;
+    renderAll();
+    if (!preparedBundle && detailStateFor(intended)) await applyViewPatch(intended);
+  } catch (error) {
+    if (sequence !== loadSequence) return;
+    setLoading(false);
+    state.updateStatus = "failed";
+    state.reloadRequired = /model version changed/i.test(error.message);
+    state.failedPatch = null;
+    elements.retryLoad.hidden = false;
+    elements.retryLoad.disabled = false;
+    if (!hadOverview) {
+      state.ready = false;
+      setDataControlsDisabled(true);
+      renderLoadFailure();
+    }
+    console.error(error);
+    if (hadOverview) renderControls();
+  }
+  renderUpdateStatus();
+}
+
+function DEFAULT_CONTEXT_FOR_AUDIENCE(audience) {
+  const keys = audience === "farmers" ? ["crop", "stage", "soil", "farmGoal"]
+    : audience === "gardeners" ? ["plant", "gardenSetting", "gardenSoil", "gardenGoal"] : [];
+  return Object.fromEntries(keys.map((key) => [key, DEFAULT_VIEW[key]]));
 }
 
 function currentSnapshot() {
@@ -1485,6 +1124,7 @@ function currentSnapshot() {
     exportedAt: new Date().toISOString(),
     model: {
       version: MODEL_VERSION,
+      snapshotId: state.manifest?.snapshotId,
       generatedAt: state.liveData.generatedAt,
       provider: state.liveData.forecast.provider,
       sourceModel: state.liveData.forecast.sourceModel,
@@ -1551,133 +1191,115 @@ function exportSnapshot() {
   setViewFeedback(isGerman() ? "Aktueller Prognosedatenstand als JSON exportiert." : "Live forecast snapshot exported as JSON.");
 }
 
+installLocationSearch({
+  input: elements.locationSearch, list: elements.locationResults, status: elements.searchStatus,
+  getItems: () => state.locations,
+  label: (item, count) => item
+    ? `${item.name} · ${ui(item.level === "state" ? "searchStateType" : "searchDistrictType")}${item.level === "district" ? ` · ${item.stateName}` : ""}`
+    : ui(count ? "searchResultsCount" : "searchNoResults", { count }),
+  onSelect: (item) => selectMapUnit(item.level, item.id)
+});
+
 elements.languageButtons.forEach((button) => {
   button.addEventListener("click", () => {
     if (button.dataset.language === state.language) return;
     state.language = button.dataset.language;
     applyDocumentLanguage(document, state.language);
     if (state.ready) renderAll();
-    else persistViewState();
-  });
-});
-
-document.querySelectorAll("[data-level]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.level = button.dataset.level;
-    if (state.level === "state") {
-      state.selectedDistrict = null;
-      state.selectedBasin = null;
-    } else if (state.level === "district") {
-      state.selectedBasin = null;
+    else {
+      if (state.loading) setLoading(true);
+      else if (state.updateStatus === "failed") renderLoadFailure();
+      persistViewState();
     }
-    renderAll();
+    renderUpdateStatus();
   });
 });
 
-document.querySelectorAll("[data-audience]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.audience = button.dataset.audience;
-    state.metricCache.clear();
-    renderAll();
-  });
-});
-
-document.querySelectorAll("[data-layer]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.layer = button.dataset.layer;
-    renderAll();
-  });
-});
-
-document.querySelectorAll("[data-detail]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.detail = button.dataset.detail;
-    renderAll();
-  });
-});
+document.querySelectorAll("[data-level]").forEach((button) => button.addEventListener("click", () => {
+  const level = button.dataset.level;
+  applyViewPatch({ level, ...(level === "state" ? { selectedDistrict: null, selectedBasin: null }
+    : level === "district" ? { selectedBasin: null } : {}) });
+}));
+document.querySelectorAll("[data-audience]").forEach((button) => button.addEventListener("click", () => applyViewPatch({ audience: button.dataset.audience })));
+document.querySelectorAll("[data-layer]").forEach((button) => button.addEventListener("click", () => applyViewPatch({ layer: button.dataset.layer })));
+document.querySelectorAll("[data-detail]").forEach((button) => button.addEventListener("click", () => applyViewPatch({ detail: button.dataset.detail }, { map: false })));
 
 [
-  [elements.cropSelect, "crop", FIELD_CONTEXTS.crops],
-  [elements.stageSelect, "stage", FIELD_CONTEXTS.stages],
-  [elements.soilSelect, "soil", FIELD_CONTEXTS.soils],
-  [elements.farmGoalSelect, "farmGoal", FARM_GOALS],
-  [elements.plantSelect, "plant", HORTICULTURE_CONTEXTS.plants],
-  [elements.gardenSettingSelect, "gardenSetting", HORTICULTURE_CONTEXTS.settings],
-  [elements.gardenSoilSelect, "gardenSoil", HORTICULTURE_CONTEXTS.soils],
-  [elements.gardenGoalSelect, "gardenGoal", HORTICULTURE_CONTEXTS.goals]
-].forEach(([select, key, options]) => {
-  select.addEventListener("change", () => {
-    if (Object.hasOwn(options, select.value)) {
-      state[key] = select.value;
-      state.metricCache.clear();
-      renderAll();
-    }
-  });
-});
+  [elements.cropSelect, "crop", FIELD_CONTEXTS.crops], [elements.stageSelect, "stage", FIELD_CONTEXTS.stages],
+  [elements.soilSelect, "soil", FIELD_CONTEXTS.soils], [elements.farmGoalSelect, "farmGoal", FARM_GOALS],
+  [elements.plantSelect, "plant", HORTICULTURE_CONTEXTS.plants], [elements.gardenSettingSelect, "gardenSetting", HORTICULTURE_CONTEXTS.settings],
+  [elements.gardenSoilSelect, "gardenSoil", HORTICULTURE_CONTEXTS.soils], [elements.gardenGoalSelect, "gardenGoal", HORTICULTURE_CONTEXTS.goals]
+].forEach(([select, key, options]) => select.addEventListener("change", () => {
+  if (Object.hasOwn(options, select.value)) applyViewPatch({ [key]: select.value });
+}));
 
+function selectDate(date) {
+  if (!state.availableDates.includes(date)) return;
+  return applyViewPatch({ date }, { clearDateNotice: true });
+}
 elements.dateInput.addEventListener("change", () => {
-  if (state.availableDates.includes(elements.dateInput.value)) {
-    state.date = elements.dateInput.value;
-    renderAll();
-  } else {
-    elements.dateInput.value = state.date;
-    setViewFeedback(isGerman()
-      ? `Ein verfügbares Datum zwischen ${state.availableDates[0]} und ${state.availableDates.at(-1)} wählen.`
-      : `Choose an available date between ${state.availableDates[0]} and ${state.availableDates.at(-1)}.`);
-  }
+  if (state.availableDates.includes(elements.dateInput.value)) selectDate(elements.dateInput.value);
+  else { elements.dateInput.value = state.date; setViewFeedback(isGerman() ? "Ein Datum aus dem verfügbaren Zeitraum wählen." : "Choose a date within the available window."); }
 });
-
-elements.previousDay.addEventListener("click", () => {
-  const index = state.availableDates.indexOf(state.date);
-  if (index > 0) state.date = state.availableDates[index - 1];
-  renderAll();
+elements.previousDay.addEventListener("click", () => selectDate(state.availableDates[state.availableDates.indexOf(state.date) - 1]));
+elements.nextDay.addEventListener("click", () => selectDate(state.availableDates[state.availableDates.indexOf(state.date) + 1]));
+elements.today.addEventListener("click", () => {
+  const resolution = resolveForecastSelection(berlinToday(), state.availableDates, state.date);
+  state.dateAdjustment = resolution.adjusted ? resolution : null;
+  applyViewPatch({ date: resolution.date });
 });
-
-elements.nextDay.addEventListener("click", () => {
-  const index = state.availableDates.indexOf(state.date);
-  if (index >= 0 && index < state.availableDates.length - 1) state.date = state.availableDates[index + 1];
-  renderAll();
+elements.regionSelect.addEventListener("change", () => { if (elements.regionSelect.value) selectMapUnit(state.level, elements.regionSelect.value); });
+elements.scopeBack.addEventListener("click", () => applyViewPatch(state.level === "basin" && state.selectedDistrict
+  ? { level: "district", selectedBasin: null } : { level: "state", selectedDistrict: null, selectedBasin: null }));
+elements.retryLoad.addEventListener("click", () => {
+  if (state.ready && state.failedPatch) { const patch = state.failedPatch; state.failedPatch = null; applyViewPatch(patch); }
+  else loadApplication();
 });
-
-elements.regionSelect.addEventListener("change", () => {
-  if (elements.regionSelect.value) selectMapUnit(state.level, elements.regionSelect.value, false);
-});
-
-elements.scopeBack.addEventListener("click", () => {
-  if (state.level === "basin" && state.selectedDistrict) {
-    state.level = "district";
-    state.selectedBasin = null;
-  } else {
-    state.level = "state";
-    state.selectedDistrict = null;
-    state.selectedBasin = null;
-  }
-  renderAll();
-});
-
-elements.retryLoad.addEventListener("click", loadApplication);
 elements.shareView.addEventListener("click", copyViewLink);
 elements.exportView.addEventListener("click", exportSnapshot);
-
-window.addEventListener("popstate", () => {
-  Object.assign(state, parseViewState(window.location.search, browserLanguage));
-  if (state.ready) {
-    const currentForecastDate = state.availableDates[Math.min(state.liveData.forecast.pastDays || 0, state.availableDates.length - 1)];
-    state.date = resolveForecastDate(state.date, state.availableDates, currentForecastDate);
-    renderAll();
+elements.updateCheck.addEventListener("click", () => checkForUpdates());
+elements.updateApply.addEventListener("click", () => state.reloadRequired ? window.location.reload() : loadApplication({ manifest: state.pendingManifest }));
+elements.resultsTab.addEventListener("click", () => setPanel("results"));
+elements.mapTab.addEventListener("click", () => setPanel("map"));
+for (const tab of [elements.resultsTab, elements.mapTab]) tab.addEventListener("keydown", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const panel = event.key === "Home" ? "results" : event.key === "End" ? "map" : state.panel === "results" ? "map" : "results";
+    setPanel(panel);
+    (panel === "map" ? elements.mapTab : elements.resultsTab).focus();
   }
 });
-
+elements.toggleActions.addEventListener("click", () => {
+  const expanded = elements.toggleActions.getAttribute("aria-expanded") !== "true";
+  elements.toggleActions.setAttribute("aria-expanded", String(expanded));
+  elements.toggleActions.closest(".action-block").classList.toggle("is-expanded", expanded);
+  elements.toggleActions.textContent = ui(expanded ? "fewerActions" : "moreActions");
+});
+elements.resetSettings.addEventListener("click", async () => {
+  await applyViewPatch(DEFAULT_CONTEXT_FOR_AUDIENCE(state.audience));
+  setViewFeedback(ui("resetPersonalisationFeedback"));
+});
+elements.trend.addEventListener("click", (event) => {
+  const date = event.target.closest("circle[data-date]")?.dataset.date;
+  if (date) selectDate(date);
+});
+window.addEventListener("popstate", () => {
+  const view = parseViewState(window.location.search, browserLanguage);
+  if (state.ready) {
+    const resolution = resolveForecastSelection(new URLSearchParams(window.location.search).get("date"), state.availableDates, berlinToday());
+    state.dateAdjustment = resolution.adjusted ? resolution : null;
+    applyViewPatch({ ...view, date: resolution.date });
+  } else Object.assign(state, view);
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden && state.ready) checkForUpdates({ quiet: true }); });
 window.setInterval(() => {
   if (!state.ready) return;
   const previousStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
   updateOperationalFreshness();
   const nextStatus = `${state.freshness.label}|${Math.floor(state.freshness.ageHours || 0)}|${state.sourceFreshness.staleSources.join()}`;
   const warningStatus = warningContextStatus(warningContextForUnit(selectedUnit()));
-  if (previousStatus !== nextStatus || state.warningContextStatus !== warningStatus) {
-    renderSummary();
-    renderDetails();
-  }
+  if (previousStatus !== nextStatus || state.warningContextStatus !== warningStatus) renderAll({ map: false });
+  if (!document.hidden) checkForUpdates({ quiet: true });
 }, 60_000);
 
 applyDocumentLanguage(document, state.language);

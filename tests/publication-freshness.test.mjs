@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { checkLiveFreshness, formatRefreshSummary } from "../scripts/check-live-freshness.mjs";
+import { readFile } from "node:fs/promises";
+import { checkLiveFreshness, formatRefreshSummary, validateSavedSnapshot } from "../scripts/check-live-freshness.mjs";
 
 const NOW = Date.parse("2026-10-22T10:00:00Z");
 const isoBefore = (hours) => new Date(NOW - hours * 3_600_000).toISOString();
@@ -84,4 +85,53 @@ test("failure summary preserves source error and distinguishes a skipped publica
   assert.match(summary, /Publication check: \*\*skipped\*\*/);
   assert.match(summary, /UFZ timestamp is stale/);
   assert.match(summary, /previous Pages release is preserved/);
+});
+
+test("saved publication permits a real historical snapshot without rewriting its age or source limits", async () => {
+  const dataset = JSON.parse(await readFile(new URL("../assets/live/forecast.json", import.meta.url), "utf8"));
+  const original = JSON.stringify(dataset);
+  const now = Date.parse(dataset.generatedAt) + 72 * 3_600_000;
+  const report = await validateSavedSnapshot(dataset, now);
+  assert.equal(report.status, "ready");
+  assert.equal(report.mode, "saved");
+  assert.equal(report.freshnessStatus, "stale");
+  assert.equal(report.suggestedActions, "suppressed-for-stale-data");
+  assert.equal(report.generatedAt, dataset.generatedAt);
+  assert.equal(report.snapshotAgeHours, 72);
+  assert.equal(report.sources.radolan.maximumAgeHours, 8);
+  assert.equal(report.sources.ufz.maximumAgeHours, 96);
+  assert.equal(JSON.stringify(dataset), original);
+  assert.equal(checkLiveFreshness(dataset, now).status, "blocked");
+});
+
+test("saved publication still rejects future clocks, malformed date windows and incomplete basin data", async () => {
+  const dataset = JSON.parse(await readFile(new URL("../assets/live/forecast.json", import.meta.url), "utf8"));
+  const now = Date.parse(dataset.generatedAt) + 72 * 3_600_000;
+  for (const damage of [
+    (copy) => { copy.generatedAt = new Date(now + 3_600_000).toISOString(); },
+    (copy) => { copy.forecast.dates[3] = copy.forecast.dates[2]; },
+    (copy) => { copy.soilMoisture.ufz.validAt = new Date(now + 3 * 3_600_000).toISOString(); },
+    (copy) => { copy.basins[0].context.ufzTopsoilSmi = null; }
+  ]) {
+    const copy = structuredClone(dataset);
+    damage(copy);
+    const report = await validateSavedSnapshot(copy, now);
+    assert.equal(report.status, "blocked");
+    assert.ok(report.issues.length);
+  }
+});
+
+test("saved-data summary clearly reports reuse, original date and repository fallback", () => {
+  const summary = formatRefreshSummary(null, {
+    mode: "saved", status: "ready", generatedAt: "2026-10-22T20:12:46.515Z", freshnessStatus: "stale", sources: {}
+  }, { refresh: "skipped", reuse: "success", publication: "success" }, {
+    origin: "repository-fallback", fallbackReason: "Published snapshot returned HTTP 503"
+  });
+  assert.match(summary, /Reused saved snapshot/);
+  assert.match(summary, /original generation time preserved/i);
+  assert.match(summary, /2026-10-22T20:12:46.515Z/);
+  assert.match(summary, /repository-fallback/);
+  assert.match(summary, /HTTP 503/);
+  assert.match(summary, /\*\*stale\*\*/);
+  assert.doesNotMatch(summary, /No new site is published/);
 });

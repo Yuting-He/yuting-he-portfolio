@@ -147,6 +147,18 @@ Every audience receives a different sequence:
 
 Official warning counts affect state-level action wording only when the feed is at most eight hours old, the selected date is today in Berlin, and the warning interval is active now. District and sub-basin actions do not inherit state-wide counts because the warning areas have not been mapped to those units. Warning panels show all matching affected areas and validity intervals as state-wide background, alongside issue time and independent freshness status. Saved/invalid feeds never establish current warning conditions; missing entries never establish an all-clear. These counts never enter the custom 0-100 score. The feed is not a retrospective archive or a warning forecast for the full horizon. River flooding must be checked through the responsible state flood service.
 
+## Workbench and publication upgrade
+
+The workbench uses a results-first mobile layout, searchable state/district selection and explicit drill-down. Dates are Berlin calendar dates; an expired or invalid shared date is explained rather than silently replaced. Role settings are retained when changing roles, but only the active role's effective context enters calculation. Residents and municipalities use the default environmental context instead of hidden farm or garden selections.
+
+Data publication derives a SHA-256-verified national overview and immutable state bundles from one complete validated snapshot. All 16 states, four default audiences and nine analysis dates are precomputed with the same prediction and exact-overlap aggregation functions used by detailed client views. Regional bundles include every crosswalk dependency, including cross-border basins. The source contains 614 basins, while 604 have administrative crosswalk records; no administrative assignment is invented for the other ten. Global primary assignments are retained independently of load order. Custom configurations load the selected state's full dependencies; other states are explicitly marked as not yet calculated for that configuration.
+
+The client preserves a verified overview when regional requests fail. It verifies byte size, SHA-256, model version, snapshot identity and date window before accepting an asset; failed/corrupt responses are bypassed on retry. A new manifest is checked when the page returns to the foreground and at bounded intervals. Applying a snapshot preserves valid region, date, role and language settings, while explaining dates that have left the window. Dependent controls pause during the atomic application; language and official services remain available.
+
+Scheduled and manual runs continue to require a genuine fresh ingestion and the strict real-clock gate. Ordinary code updates may reuse a structurally valid public or repository snapshot, preserving every source time and reporting whether advice is current or suppressed. PRs execute the same regression and dependency assembly checks without publication. Static assembly verifies all immutable assets and local dependencies, then records commit, model and snapshot identities in `build-info.json`.
+
+Browser regression covers real DOM state, requests, keyboard navigation, mobile layouts, failed loads, update replays and share restoration. Test-only update replays are labelled fixtures and retain source provenance. Scientific model calibration, precise DWD-to-district warning geometry and durable historical replay storage remain independent follow-up work.
+
 ## Current limitations
 
 - One ICON grid sample represents each sub-basin; it is not a raster zonal mean or downscaled urban heat field.
