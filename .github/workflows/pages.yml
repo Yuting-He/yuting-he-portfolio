@@ -24,6 +24,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      heatlens_snapshot: ${{ steps.site-identity.outputs.snapshot_id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -64,13 +66,22 @@ jobs:
         run: node scripts/build-heatlens-assets.mjs
 
       - name: Install Chromium for browser regression checks
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps --only-shell chromium
 
       - name: Verify real HeatLens workbench flows
         run: npm run test:browser
 
       - name: Assemble and verify static site dependencies
         run: node scripts/assemble-site.mjs
+
+      - name: Record the exact immutable snapshot to verify after deployment
+        id: site-identity
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          const info = JSON.parse(readFileSync('_site/build-info.json', 'utf8'));
+          appendFileSync(process.env.GITHUB_OUTPUT, 'snapshot_id=' + info.snapshotId + '\n');
+          NODE
 
       - name: Recheck source freshness immediately before publication
         env:
@@ -121,7 +132,33 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+      - name: Checkout the deployed source for public HTTP verification
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Node.js for public HTTP verification
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify the public pages, modules and exact deployed snapshot
+        env:
+          HEATLENS_SITE_URL: ${{ steps.deployment.outputs.page_url }}
+          HEATLENS_EXPECTED_SNAPSHOT_ID: ${{ needs.build.outputs.heatlens_snapshot }}
+        run: node scripts/verify-live-site.mjs
+
+      - name: Save public-site verification diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: heatlens-live-site-verification
+          path: artifacts/live-site-verification.json
+          if-no-files-found: warn
+          retention-days: 14
