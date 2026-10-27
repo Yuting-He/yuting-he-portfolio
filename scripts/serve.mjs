@@ -4,12 +4,19 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+if (!existsSync(join(root, "assets/live/manifest.json"))) {
+  const { buildHeatlensAssets } = await import("./build-heatlens-assets.mjs");
+  await buildHeatlensAssets();
+}
 const port = Number(process.env.PORT || 4173);
 const mimeTypes = {
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".geojson": "application/geo+json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".webp": "image/webp",
   ".png": "image/png",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 };

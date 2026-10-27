@@ -26,6 +26,10 @@ Personal portfolio for environmental engineering, statistics, geospatial NatCat 
 - shareable URL state and JSON snapshot export
 - complete English/German interface switching, including generated explanations, actions, dates, status messages, and shareable `lang` state
 - per-source freshness, source completeness, spatial coverage, station-distance, and ensemble-dispersion evidence grades
+- searchable state/district navigation, consistent map selection and explicit drill-down breadcrumbs
+- results-first mobile workspace with map/results tabs, collapsible role settings and priority actions
+- explicit expired-link date notices, a Berlin-time date strip and in-page snapshot update checks
+- versioned national overview and on-demand state bundles, verified by SHA-256 before use
 
 ## Decision boundary
 
@@ -54,7 +58,17 @@ Open <http://127.0.0.1:4173/> and run all tests with:
 npm test
 ```
 
-`npm run serve` uses the last validated snapshot committed to the repository and therefore also works offline. To download the current nine-day window and then start the local site, use:
+Build the immutable data products and run the browser regression suite:
+
+```bash
+npm run build-assets
+npx playwright install chromium
+npm run test:browser
+```
+
+CI installs Chromium and its Linux dependencies, tests real keyboard/search/navigation, narrow-screen German layouts, role settings, failed requests, immutable-version updates and shared URLs, and retains traces/screenshots on failure. `npm test` also checks exact precomputation parity for every state, role and date. Browser tests mock background map tiles; they never modify or present their replay fixtures as new observations.
+
+`npm run serve` creates the manifest and versioned products from the bundled snapshot if they are absent. It can use saved data offline; all original source times and expiry rules remain visible. After changing a local snapshot, run `npm run build-assets` again. To download the current nine-day window and then start the local site, use:
 
 ```bash
 npm run serve:live
@@ -68,7 +82,9 @@ npm run refresh-data
 
 The ingestion job queries forecast and observation sources in rate-limited batches, decodes HDF5 / NetCDF4 grids, validates all 614 basins and nine dates, and atomically replaces `assets/live/forecast.json`. UFZ v2 uses a geographic 0.015625-degree grid, with separate timestamps for 14-day-mean SMI and daily plant-available water. The source URLs and version are retained in the snapshot.
 
-GitHub Actions is scheduled every six hours. A failed refresh now fails the workflow for every trigger and preserves the previous Pages release. Before publication, `node scripts/check-live-freshness.mjs` verifies the actual build clock, today's Berlin forecast window and each required source's raw timestamp. Historical snapshot tests remain runnable offline and are not a live-publication check. Every attempt writes `artifacts/refresh-status.json`; the workflow summary and diagnostic artifact retain source ages and failures. GitHub may disable scheduled workflows after repository inactivity; re-enable the workflow in Actions if its state is `disabled_inactivity`, then run it manually and verify a successful Pages deployment.
+GitHub Actions refreshes data every six hours and on manual dispatch. Those runs must pass the strict real-clock publication check: a newly generated snapshot, today's Berlin forecast window and each required source's raw timestamp. Failed live refreshes fail the workflow and preserve the previous Pages release. Ordinary pushes and pull requests reuse the validated public snapshot, with an explicitly reported repository fallback if needed; `--saved` validates the saved record without changing its generation/source times. Expired saved values remain visibly expired and cannot generate current advice. This lets code updates proceed independently of upstream availability. Pull requests run the same model, browser and assembly checks without deploying. Every attempt retains refresh/reuse/publication diagnostics. GitHub may disable scheduled workflows after inactivity; re-enable the workflow in Actions if its state is `disabled_inactivity`, then run it manually and verify a successful Pages deployment.
+
+The client initially requests only `assets/live/manifest.json` and its immutable national overview. Regional geometry, exact overlap weights and complete dependent basin records load on demand. Cross-border records are never assigned by centroid: the crosswalk maps 604 of the 614 available basins; the remaining ten keep their unassigned status. Display, model and snapshot versions remain separate. A failed regional request preserves the existing view; retry bypasses any cached error response. New snapshots are offered in-page and applied atomically while preserving valid user selections. A copied view URL follows available data; JSON export records the exact immutable snapshot ID.
 
 DWD warning context has its own eight-hour freshness limit. The interface labels stale or unverified feeds as saved context, shows their issue time and affected areas, and does not interpret a missing entry as an all-clear. Warnings are grouped by state; district and sub-basin views explicitly show state-wide background, without inheriting state warning counts into local action advice. State-level warning prompts only use alerts active now on today's Berlin date. Precise DWD-to-NUTS warning-area matching remains a future improvement.
 
@@ -90,10 +106,17 @@ The script projects the GISCO and HydroBASINS layers to ETRS89 / LAEA Europe (EP
 - `heatwave-language-de.js`, `heatwave-i18n.js` - German decision wording and shared EN/DE interface localization
 - `heatwave-state.js` - validated shareable view state and dynamic date resolution
 - `heatwave-warnings.js` - independent warning freshness, state scope and English/German explanations
+- `heatwave-data.js` - versioned data client, integrity checks and role-specific effective context
+- `heatwave-spatial.js` - spatial indexes, exact weights and cached regional calculation
+- `heatwave-results.js`, `heatwave-controls.js` - result/evidence rendering and keyboard location search
 - `assets/live/forecast.json` - last validated operational snapshot
 - `scripts/fetch-live-data.mjs` - coordinated deterministic and ensemble forecast ingestion
 - `scripts/grid-sources.mjs` - UFZ, DWD soil WCS, and RADOLAN HDF5 adapters
 - `scripts/check-live-freshness.mjs` - real-clock publication gate and refresh diagnostic summary
+- `scripts/build-heatlens-assets.mjs` - reproducible default overview and regional bundle generation
+- `scripts/reuse-published-data.mjs` - saved snapshot reuse with explicit provenance and fallback
+- `scripts/assemble-site.mjs` - dependency-traced atomic assembly, manifest integrity and build metadata
+- `playwright.config.mjs`, `tests/browser/` - real browser workflow and failure-recovery regression checks
 - `scripts/dwd-stations.mjs` - DWD station discovery and temperature-observation adapter
 - `scripts/build_spatial_crosswalk.py` - reproducible exact-area spatial ETL
 - `tests/` - model, live-data, spatial, state, and page-contract checks

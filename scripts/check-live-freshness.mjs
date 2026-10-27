@@ -69,6 +69,7 @@ export function checkLiveFreshness(dataset, now = Date.now()) {
 
   return {
     schema: "heatlens-publication-status/v1",
+    mode: "live",
     checkedAt: new Date(now).toISOString(),
     status: issues.length ? "blocked" : "ready",
     generatedAt: dataset?.generatedAt ?? null,
@@ -84,15 +85,71 @@ export function checkLiveFreshness(dataset, now = Date.now()) {
   };
 }
 
+// A normal site edit can publish the last real snapshot without contacting all
+// forecast providers. Its original clock and source dates remain authoritative:
+// passing this check does not make saved data fresh or enable stale advice.
+export async function validateSavedSnapshot(dataset, now = Date.now(), { expectedBasinCount = 614 } = {}) {
+  const live = checkLiveFreshness(dataset, now);
+  const issues = [];
+  const generatedTime = Date.parse(dataset?.generatedAt);
+  if (!Number.isFinite(generatedTime) || generatedTime > now + 5 * 60_000) {
+    issues.push("Saved snapshot has a missing, invalid or future generation time.");
+  }
+  const forecast = dataset?.forecast || {};
+  const dates = forecast.dates;
+  const validWindow = Array.isArray(dates) && dates.length === 9 && dates.every(isDate) &&
+    forecast.pastDays === 2 && forecast.forecastDays === 7 &&
+    dates.every((date, index) => !index || Date.parse(date) - Date.parse(dates[index - 1]) === 24 * HOUR);
+  if (!validWindow || Number.isFinite(generatedTime) && dates[2] !== berlinDate(generatedTime)) {
+    issues.push("Saved snapshot must retain its consecutive two-past/seven-forecast-day window anchored on its original Berlin generation date.");
+  }
+  for (const [name, source] of Object.entries(live.sources)) {
+    if (source.status === "unavailable" || !Number.isFinite(source.ageHours) || source.ageHours < -2) {
+      issues.push(`${name} has unavailable, invalid or future source metadata in the saved snapshot.`);
+    }
+  }
+  try {
+    const { validateLiveDataset } = await import("./fetch-live-data.mjs");
+    // Ingestion validation checks completeness and that sources were current at
+    // the recorded generation time. Avoid rewriting caller-owned provenance.
+    validateLiveDataset(structuredClone(dataset), expectedBasinCount);
+  } catch (error) {
+    issues.push(`Saved snapshot structure is invalid: ${error.message}`);
+  }
+  const staleSources = Object.entries(live.sources).filter(([, source]) => source.status !== "available")
+    .map(([name]) => name);
+  const snapshotExpired = !Number.isFinite(live.snapshotAgeHours) || live.snapshotAgeHours > 36;
+  const freshnessStatus = snapshotExpired || staleSources.length ? "stale"
+    : live.snapshotAgeHours > 18 ? "delayed" : "current";
+  return {
+    ...live,
+    mode: "saved",
+    status: issues.length ? "blocked" : "ready",
+    freshnessStatus,
+    staleSources,
+    suggestedActions: freshnessStatus === "stale" ? "suppressed-for-stale-data" : "runtime-checked",
+    livePublicationIssues: live.issues,
+    issues
+  };
+}
+
 const markdownCell = (value) => String(value ?? "not available")
   .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
   .replaceAll("|", "\\|").replace(/[\r\n]+/g, " ");
 
-export function formatRefreshSummary(refresh, publication, outcomes = {}) {
+export function formatRefreshSummary(refresh, publication, outcomes = {}, reuse = null) {
+  const saved = publication?.mode === "saved" || outcomes.reuse === "success";
   const lines = [
     "## HeatLens data refresh",
     "",
     `Refresh step: **${markdownCell(outcomes.refresh || refresh?.status || "not run")}**.`,
+    ...(saved ? [
+      "Data mode: **Reused saved snapshot — original generation time preserved**.",
+      `Reuse step: **${markdownCell(outcomes.reuse || reuse?.status || "not run")}**.`,
+      `Snapshot origin: ${markdownCell(reuse?.origin || publication?.reuseOrigin)}.`,
+      `Saved-data freshness: **${markdownCell(publication?.freshnessStatus)}**.`,
+      "Runtime source limits (8/96 hours) and the 36-hour snapshot action gate still apply."
+    ] : []),
     `Publication check: **${markdownCell(outcomes.publication || publication?.status || "not run")}**.`,
     "",
     `Snapshot generated: ${markdownCell(publication?.generatedAt || refresh?.generatedAt)}.`,
@@ -106,9 +163,12 @@ export function formatRefreshSummary(refresh, publication, outcomes = {}) {
     lines.push(`| ${[name, source.status, source.validAt, source.ageHours, source.maximumAgeHours].map(markdownCell).join(" | ")} |`);
   }
   if (refresh?.error?.message) lines.push("", `Refresh failure: ${markdownCell(refresh.error.message)}`);
+  if (reuse?.fallbackReason) lines.push("", `Repository fallback reason: ${markdownCell(reuse.fallbackReason)}`);
   for (const issue of publication?.issues || []) lines.push("", `Publication blocked: ${markdownCell(issue)}`);
-  if (outcomes.refresh !== "success" || outcomes.publication !== "success") {
-    lines.push("", "No new site is published unless both refresh and publication validation succeed. The previous Pages release is preserved.");
+  if ((saved ? outcomes.reuse !== "success" : outcomes.refresh !== "success") || outcomes.publication !== "success") {
+    lines.push("", saved
+      ? "No new site is published unless saved-snapshot reuse and publication validation succeed. The previous Pages release is preserved."
+      : "No new site is published unless both refresh and publication validation succeed. The previous Pages release is preserved.");
   }
   lines.push("", "Historical snapshot/model tests are separate from this real-clock publication check.", "");
   return lines.join("\n");
@@ -129,21 +189,28 @@ async function optionalReport(path) {
 async function main() {
   const reportPath = resolve(ROOT, "artifacts/publication-status.json");
   if (process.argv.includes("--summary")) {
-    const [refresh, publication] = await Promise.all([
+    const [refresh, publication, reuse] = await Promise.all([
       optionalReport(resolve(ROOT, "artifacts/refresh-status.json")),
-      optionalReport(reportPath)
+      optionalReport(reportPath),
+      optionalReport(resolve(ROOT, "artifacts/reuse-status.json"))
     ]);
     const summary = formatRefreshSummary(refresh, publication, {
       refresh: process.env.HEATLENS_REFRESH_OUTCOME,
-      publication: process.env.HEATLENS_PUBLICATION_OUTCOME
-    });
+      publication: process.env.HEATLENS_PUBLICATION_OUTCOME,
+      reuse: process.env.HEATLENS_REUSE_OUTCOME
+    }, reuse);
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary);
     else console.log(summary);
     return;
   }
   let report;
   try {
-    report = checkLiveFreshness(await readJson(resolve(ROOT, "assets/live/forecast.json")));
+    const dataset = await readJson(resolve(ROOT, "assets/live/forecast.json"));
+    report = process.argv.includes("--saved") ? await validateSavedSnapshot(dataset) : checkLiveFreshness(dataset);
+    if (report.mode === "saved") {
+      const reuse = await optionalReport(resolve(ROOT, "artifacts/reuse-status.json"));
+      report.reuseOrigin = reuse?.origin ?? "provided-saved-snapshot";
+    }
   } catch (error) {
     report = {
       schema: "heatlens-publication-status/v1", checkedAt: new Date().toISOString(),
@@ -156,7 +223,9 @@ async function main() {
     console.error(report.issues.join("\n"));
     process.exitCode = 1;
   } else {
-    console.log(`Live publication check passed: generated ${report.generatedAt}; forecast anchor ${report.currentDate}.`);
+    console.log(report.mode === "saved"
+      ? `Saved publication check passed: reused ${report.generatedAt}; data is ${report.freshnessStatus}; source clocks unchanged.`
+      : `Live publication check passed: generated ${report.generatedAt}; forecast anchor ${report.currentDate}.`);
   }
 }
 

@@ -6,3 +6,6 @@ desktop.ini
 node_modules/
 .cache/
 artifacts/
+assets/live/manifest.json
+assets/live/snapshots/
+_site/

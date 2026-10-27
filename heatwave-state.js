@@ -79,18 +79,38 @@ export function parseViewState(search = "", defaultLanguage = DEFAULT_VIEW.langu
   };
 }
 
-export function resolveForecastDate(requestedDate, dates, fallbackDate = dates?.[0]) {
+// Keep the requested date alongside the date that can actually be displayed.
+// This lets shared links and rolling snapshots explain a fallback instead of
+// silently showing a different analysis day. Dates are calendar labels in the
+// existing Berlin analysis window, so compare them at UTC midnight rather than
+// using local day lengths across daylight-saving changes.
+export function resolveForecastSelection(requestedDate, dates, fallbackDate = dates?.[0]) {
   if (!Array.isArray(dates) || !dates.length || !dates.every(isIsoDate)) {
     throw new TypeError("Forecast dates must be a non-empty ISO date array");
   }
-  if (dates.includes(requestedDate)) return requestedDate;
-  if (!isIsoDate(requestedDate)) return dates.includes(fallbackDate) ? fallbackDate : dates[0];
+  const defaultDate = dates.includes(fallbackDate) ? fallbackDate : dates[0];
+  if (requestedDate === null || requestedDate === undefined || requestedDate === "") {
+    return { date: defaultDate, requestedDate: null, adjusted: false, reason: "default" };
+  }
+  if (dates.includes(requestedDate)) {
+    return { date: requestedDate, requestedDate, adjusted: false, reason: "requested" };
+  }
+  if (!isIsoDate(requestedDate)) {
+    return { date: defaultDate, requestedDate, adjusted: true, reason: "invalid" };
+  }
   const requestedTime = Date.parse(`${requestedDate}T00:00:00Z`);
-  return dates.reduce((nearest, date) => {
-    const distance = Math.abs(Date.parse(`${date}T00:00:00Z`) - requestedTime);
+  const date = dates.reduce((nearest, candidate) => {
+    const distance = Math.abs(Date.parse(`${candidate}T00:00:00Z`) - requestedTime);
     const nearestDistance = Math.abs(Date.parse(`${nearest}T00:00:00Z`) - requestedTime);
-    return distance < nearestDistance ? date : nearest;
+    return distance < nearestDistance ? candidate : nearest;
   }, dates[0]);
+  const outsideWindow = requestedDate < dates.reduce((earliest, value) => value < earliest ? value : earliest) ||
+    requestedDate > dates.reduce((latest, value) => value > latest ? value : latest);
+  return { date, requestedDate, adjusted: true, reason: outsideWindow ? "outside-window" : "missing-date" };
+}
+
+export function resolveForecastDate(requestedDate, dates, fallbackDate = dates?.[0]) {
+  return resolveForecastSelection(requestedDate, dates, fallbackDate).date;
 }
 
 export function runtimeSourceFreshness(sourceFreshness, now = Date.now()) {

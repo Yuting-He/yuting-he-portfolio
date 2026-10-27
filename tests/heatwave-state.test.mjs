@@ -5,6 +5,7 @@ import {
   isRetrospectiveDate,
   parseViewState,
   resolveForecastDate,
+  resolveForecastSelection,
   runtimeSourceFreshness,
   serializeViewState,
   warningAppliesToDate
@@ -56,6 +57,52 @@ test("a requested date resolves to the current or nearest available model date",
   assert.equal(resolveForecastDate("2026-07-21", dates, "2026-07-20"), "2026-07-21");
   assert.equal(resolveForecastDate("2026-07-30", dates, "2026-07-20"), "2026-07-21");
   assert.throws(() => resolveForecastDate(null, []), /non-empty/);
+});
+
+test("date selection distinguishes a default, a valid request and an invalid shared date", () => {
+  const dates = ["2026-10-25", "2026-10-26", "2026-10-27"];
+  for (const requested of [undefined, null, ""]) {
+    assert.deepEqual(resolveForecastSelection(requested, dates, "2026-10-26"), {
+      date: "2026-10-26", requestedDate: null, adjusted: false, reason: "default"
+    });
+  }
+  assert.deepEqual(resolveForecastSelection("2026-10-27", dates, "2026-10-26"), {
+    date: "2026-10-27", requestedDate: "2026-10-27", adjusted: false, reason: "requested"
+  });
+  for (const requestedDate of ["2026-02-30", "27.10.2026", "2026-10-27T00:00:00Z", " 2026-10-27"]) {
+    assert.deepEqual(resolveForecastSelection(requestedDate, dates, "2026-10-26"), {
+      date: "2026-10-26", requestedDate, adjusted: true, reason: "invalid"
+    });
+  }
+  assert.equal(resolveForecastSelection(null, dates, "2026-10-30").date, dates[0]);
+});
+
+test("expired and future shared dates retain the requested date and explain the window fallback", () => {
+  const dates = ["2026-10-25", "2026-10-26", "2026-10-27"];
+  for (const [requestedDate, expectedDate] of [["2026-10-22", dates[0]], ["2026-11-01", dates[2]]]) {
+    assert.deepEqual(resolveForecastSelection(requestedDate, dates, "2026-10-26"), {
+      date: expectedDate, requestedDate, adjusted: true, reason: "outside-window"
+    });
+    assert.equal(resolveForecastDate(requestedDate, dates, "2026-10-26"), expectedDate);
+  }
+});
+
+test("date selection handles gaps and daylight-saving boundaries as calendar dates", () => {
+  // Germany changes to winter time on 25 October 2026. Calendar distance is
+  // unchanged by the 25-hour local day; ties retain the first supplied day.
+  const autumnDates = ["2026-10-24", "2026-10-26"];
+  assert.deepEqual(resolveForecastSelection("2026-10-25", autumnDates, "2026-10-26"), {
+    date: "2026-10-24", requestedDate: "2026-10-25", adjusted: true, reason: "missing-date"
+  });
+  assert.equal(resolveForecastSelection("2026-03-29", ["2026-03-28", "2026-03-30"]).date, "2026-03-28");
+  // The helper also accepts an unsorted set from an independently loaded shard.
+  const unsorted = ["2026-10-27", "2026-10-23", "2026-10-26"];
+  assert.equal(resolveForecastSelection("2026-10-24", unsorted).reason, "missing-date");
+  assert.equal(resolveForecastSelection("2026-10-24", unsorted).date, "2026-10-23");
+  assert.equal(resolveForecastSelection("2026-10-22", unsorted).reason, "outside-window");
+  for (const candidates of [[], ["2026-10-25", "invalid"], ["2026-02-30"], null]) {
+    assert.throws(() => resolveForecastSelection("2026-10-25", candidates), /non-empty ISO date array/);
+  }
 });
 
 test("runtime source freshness expires faster sources before the snapshot age gate", () => {
