@@ -5,7 +5,7 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildHeatlensAssets } from "../scripts/build-heatlens-assets.mjs";
-import { VERIFIED_FRONTEND_FILES, verifyLiveSite } from "../scripts/verify-live-site.mjs";
+import { VERIFIED_BINARY_FILES, VERIFIED_FRONTEND_FILES, verifyLiveSite } from "../scripts/verify-live-site.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CACHE = resolve(ROOT, ".cache");
@@ -18,7 +18,7 @@ test.before(async () => {
   directory = await mkdtemp(resolve(CACHE, "verify-live-test-"));
   manifest = await buildHeatlensAssets({ root: ROOT, outputDirectory: resolve(directory, "data") });
   defaults = new Map();
-  for (const path of ["index.html", "heatwave-demo.html", "watt-hackathon/index.html", "watt-hackathon/schedule.html", ...VERIFIED_FRONTEND_FILES, "assets/live/forecast.json"]) {
+  for (const path of ["index.html", "heatwave-demo.html", "watt-hackathon/index.html", "watt-hackathon/schedule.html", ...VERIFIED_FRONTEND_FILES, ...VERIFIED_BINARY_FILES, "assets/live/forecast.json"]) {
     defaults.set(path, await readFile(resolve(ROOT, path)));
   }
   defaults.set("assets/live/manifest.json", Buffer.from(JSON.stringify(manifest)));
@@ -68,6 +68,13 @@ test("deployed saved data verifies genuine builder hashes, pages and all modules
   assert.equal(report.files.filter((file) => file.path.endsWith(".js")).length, 11);
   assert.equal(report.overviewIntegrityVerified, true);
   assert.equal(report.regionalIntegrityVerified, true);
+  assert.equal(report.binaryFiles.length, 7);
+  assert.deepEqual(report.binaryFiles.map((file) => file.path), VERIFIED_BINARY_FILES);
+  for (const binary of report.binaryFiles) {
+    assert.equal(binary.matchesCheckout, true);
+    assert.equal(binary.bytes, files.get(binary.path).byteLength);
+    assert.equal(binary.sha256, createHash("sha256").update(files.get(binary.path)).digest("hex"));
+  }
   assert.equal(report.freshness.sources.radolan.maximumAgeHours, 8);
   assert.equal(savedReport.status, "success");
 });
@@ -125,6 +132,33 @@ test("a real 404 fails immediately rather than being reported as propagation suc
   assert.equal(report.status, "failed");
   assert.equal(report.attempts.length, 1);
   assert.match(report.error.message, /HTTP 404.*heatwave-results\.js/);
+});
+
+test("a corrupt project image fails even when UTF-8 decoding would hide the changed binary byte", async () => {
+  const files = new Map(defaults);
+  const path = "assets/portfolio/heatlens-workbench.webp";
+  const original = files.get(path);
+  const corrupt = Buffer.from(original);
+  const index = corrupt.findIndex((byte, position) => position > 0 && byte >= 0x80 && byte <= 0xbf && corrupt[position - 1] < 0x80);
+  assert.ok(index > 0, "The real WebP fixture contains a standalone invalid UTF-8 continuation byte");
+  corrupt[index] ^= 1;
+  assert.equal(corrupt.toString("utf8"), original.toString("utf8"), "Text decoding would conceal this binary corruption");
+  files.set(path, corrupt);
+  const { report, requests } = await run({ files });
+  assert.equal(report.status, "failed");
+  assert.equal(report.error.code, "BINARY_MISMATCH");
+  assert.match(report.error.message, /heatlens-workbench\.webp/);
+  assert.ok(requests.includes(path));
+});
+
+test("a missing public CV PDF fails verification even when all HTML and modules match", async () => {
+  const files = new Map(defaults);
+  files.delete("assets/Yuting_He_CV.pdf");
+  const { report, requests } = await run({ files });
+  assert.equal(report.status, "failed");
+  assert.equal(report.error.code, "HTTP_ERROR");
+  assert.match(report.error.message, /HTTP 404.*Yuting_He_CV\.pdf/);
+  assert.ok(requests.includes("assets/Yuting_He_CV.pdf"));
 });
 
 test("served module drift and immutable-byte corruption both fail verification", async () => {
