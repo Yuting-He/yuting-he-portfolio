@@ -4,7 +4,7 @@ Sources: assets/Yuting_He_CV_MunichRe_AI_NatCat.docx (education,
 experience and skills), index.html (current public experience/projects), and
 README.md (HeatLens scope and limitations). Deliberately includes only the
 public email, LinkedIn and GitHub contact details. No home address or phone.
-The expected March 2027 M.Sc. graduation was confirmed directly by the user.
+The expected February 2027 M.Sc. graduation was confirmed directly by the user.
 
 Requires ReportLab. Run: python scripts/build-public-cv.py
 """
@@ -126,13 +126,13 @@ def build_cv(output=OUTPUT):
                   ' &nbsp; | &nbsp; <link href="https://www.linkedin.com/in/yuting-he-945473214/" color="#00666B">LinkedIn</link>'
                   ' &nbsp; | &nbsp; <link href="https://github.com/Yuting-He" color="#00666B">github.com/Yuting-He</link>', "contact"),
         Spacer(1, 10),
-        paragraph("M.Sc. candidate in Environmental Engineering (expected March 2027), combining statistics with geospatial risk analytics, "
+        paragraph("M.Sc. candidate in Environmental Engineering (expected February 2027), combining statistics with geospatial risk analytics, "
                   "applied machine learning and AI-assisted development. Experience spans reinsurance, hydrology research, "
                   "engineering teaching and transparent decision-support prototypes.", "profile"),
     ]
 
     section(story, "Education")
-    entry(story, "M.Sc. Environmental Engineering - candidate", "Oct 2023 - expected Mar 2027",
+    entry(story, "M.Sc. Environmental Engineering - candidate", "Oct 2023 - expected Feb 2027",
           "Technical University of Munich (TUM)",
           description="Hydrology and water resources, environmental risk, uncertainty analysis and machine learning in forecasting.")
     entry(story, "B.Sc. Statistics; minor in Computer Science", "Oct 2020 - Feb 2025",
@@ -149,7 +149,7 @@ def build_cv(output=OUTPUT):
               "Built ArcPy/Python geoprocessing workflows and a MATLAB interface for hydrological risk analysis.",
               "Used Microsoft Copilot and LLM tools for recurring workflows and technical documentation.",
           ])
-    entry(story, "Student Research Assistant - Machine Learning in Hydrology", "Apr 2025 - Aug 2025",
+    entry(story, "Student Research Assistant - Machine Learning in Hydrology", "Apr 2025 - Jul 2025",
           "TUM - Chair of Hydrology and River Basin Management", points=[
               "Prepared Python/Google Colab teaching notebooks covering preprocessing, feature engineering, training and evaluation for hydrological forecasting.",
           ])
